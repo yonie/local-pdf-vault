@@ -1,3 +1,4 @@
 requests>=2.31.0
 PyPDF2>=3.0.1
 pymupdf>=1.23.8
+flask>=2.3.0

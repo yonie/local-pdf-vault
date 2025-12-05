@@ -18,6 +18,8 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 import re
+import sqlite3
+from contextlib import contextmanager
 
 try:
     import requests
@@ -25,12 +27,262 @@ except ImportError:
     print("Error: requests library not found. Install with: pip install requests")
     sys.exit(1)
 
+class DatabaseManager:
+    """Manages SQLite database operations for PDF metadata storage"""
+
+    def __init__(self, db_path: str = "pdfscanner.db"):
+        self.db_path = db_path
+        self._create_table()
+
+    def _create_table(self):
+        """Create the pdf_metadata table if it doesn't exist"""
+        with self._get_connection() as conn:
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS pdf_metadata (
+                    file_hash TEXT PRIMARY KEY,
+                    filename TEXT,
+                    subject TEXT,
+                    summary TEXT,
+                    date TEXT,
+                    sender TEXT,
+                    recipient TEXT,
+                    document_type TEXT,
+                    tags TEXT,
+                    error TEXT,
+                    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+
+    @contextmanager
+    def _get_connection(self):
+        """Context manager for database connections"""
+        conn = sqlite3.connect(self.db_path)
+        try:
+            yield conn
+        finally:
+            conn.close()
+
+    def store_metadata(self, metadata: Dict[str, Any]) -> bool:
+        """
+        Store PDF metadata in database
+
+        Args:
+            metadata: Dictionary with PDF metadata
+
+        Returns:
+            True if stored successfully, False otherwise
+        """
+        try:
+            with self._get_connection() as conn:
+                conn.execute('''
+                    INSERT OR REPLACE INTO pdf_metadata
+                    (file_hash, filename, subject, summary, date, sender, recipient, document_type, tags, error)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    metadata.get('file_hash'),
+                    metadata.get('filename'),
+                    metadata.get('subject'),
+                    metadata.get('summary'),
+                    metadata.get('date'),
+                    metadata.get('sender'),
+                    metadata.get('recipient'),
+                    metadata.get('document_type'),
+                    json.dumps(metadata.get('tags', [])),
+                    metadata.get('error')
+                ))
+                conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error storing metadata: {e}")
+            return False
+
+    def get_metadata(self, file_hash: str) -> Optional[Dict[str, Any]]:
+        """
+        Retrieve metadata by file hash
+
+        Args:
+            file_hash: SHA-256 hash of the file
+
+        Returns:
+            Metadata dictionary or None if not found
+        """
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.execute('SELECT * FROM pdf_metadata WHERE file_hash = ?', (file_hash,))
+                row = cursor.fetchone()
+                if row:
+                    return {
+                        'file_hash': row[0],
+                        'filename': row[1],
+                        'subject': row[2],
+                        'summary': row[3],
+                        'date': row[4],
+                        'sender': row[5],
+                        'recipient': row[6],
+                        'document_type': row[7],
+                        'tags': json.loads(row[8]) if row[8] else [],
+                        'error': row[9],
+                        'last_updated': row[10]
+                    }
+        except Exception as e:
+            print(f"Error retrieving metadata: {e}")
+        return None
+
+    def search_metadata(self, query: str, limit: int = 50) -> List[Dict[str, Any]]:
+        """
+        Search metadata across all text fields
+
+        Args:
+            query: Search query string
+            limit: Maximum number of results
+
+        Returns:
+            List of matching metadata dictionaries
+        """
+        try:
+            with self._get_connection() as conn:
+                # Search across filename, subject, summary, sender, recipient, document_type, and tags
+                sql = '''
+                    SELECT * FROM pdf_metadata
+                    WHERE filename LIKE ? OR subject LIKE ? OR summary LIKE ?
+                       OR sender LIKE ? OR recipient LIKE ? OR document_type LIKE ?
+                       OR tags LIKE ?
+                    ORDER BY last_updated DESC
+                    LIMIT ?
+                '''
+                search_pattern = f'%{query}%'
+                cursor = conn.execute(sql, (search_pattern,) * 7 + (limit,))
+                results = []
+                for row in cursor.fetchall():
+                    results.append({
+                        'file_hash': row[0],
+                        'filename': row[1],
+                        'subject': row[2],
+                        'summary': row[3],
+                        'date': row[4],
+                        'sender': row[5],
+                        'recipient': row[6],
+                        'document_type': row[7],
+                        'tags': json.loads(row[8]) if row[8] else [],
+                        'error': row[9],
+                        'last_updated': row[10]
+                    })
+                return results
+        except Exception as e:
+            print(f"Error searching metadata: {e}")
+            return []
+
+    def get_all_metadata(self, limit: int = 1000) -> List[Dict[str, Any]]:
+        """
+        Get all metadata entries
+
+        Args:
+            limit: Maximum number of results
+
+        Returns:
+            List of all metadata dictionaries
+        """
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.execute('SELECT * FROM pdf_metadata ORDER BY last_updated DESC LIMIT ?', (limit,))
+                results = []
+                for row in cursor.fetchall():
+                    results.append({
+                        'file_hash': row[0],
+                        'filename': row[1],
+                        'subject': row[2],
+                        'summary': row[3],
+                        'date': row[4],
+                        'sender': row[5],
+                        'recipient': row[6],
+                        'document_type': row[7],
+                        'tags': json.loads(row[8]) if row[8] else [],
+                        'error': row[9],
+                        'last_updated': row[10]
+                    })
+                return results
+        except Exception as e:
+            print(f"Error getting all metadata: {e}")
+            return []
+
+    def delete_metadata(self, file_hash: str) -> bool:
+        """
+        Delete a single metadata entry by file hash
+
+        Args:
+            file_hash: SHA-256 hash of the file to delete
+
+        Returns:
+            True if deleted successfully, False otherwise
+        """
+        try:
+            with self._get_connection() as conn:
+                conn.execute('DELETE FROM pdf_metadata WHERE file_hash = ?', (file_hash,))
+                conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error deleting metadata: {e}")
+            return False
+
+    def delete_all_metadata(self) -> bool:
+        """
+        Delete all metadata entries from the database
+
+        Returns:
+            True if deleted successfully, False otherwise
+        """
+        try:
+            with self._get_connection() as conn:
+                conn.execute('DELETE FROM pdf_metadata')
+                conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error deleting all metadata: {e}")
+            return False
+
+    def get_stats(self) -> Dict[str, Any]:
+        """
+        Get database statistics
+
+        Returns:
+            Dictionary with stats like total count, document types, etc.
+        """
+        try:
+            with self._get_connection() as conn:
+                # Total count
+                cursor = conn.execute('SELECT COUNT(*) FROM pdf_metadata')
+                total = cursor.fetchone()[0]
+                
+                # Count by document type
+                cursor = conn.execute('''
+                    SELECT document_type, COUNT(*) as count
+                    FROM pdf_metadata
+                    WHERE document_type IS NOT NULL AND document_type != ''
+                    GROUP BY document_type
+                    ORDER BY count DESC
+                ''')
+                types = {row[0]: row[1] for row in cursor.fetchall()}
+                
+                # Count with errors
+                cursor = conn.execute('SELECT COUNT(*) FROM pdf_metadata WHERE error IS NOT NULL')
+                errors = cursor.fetchone()[0]
+                
+                return {
+                    'total': total,
+                    'by_type': types,
+                    'errors': errors
+                }
+        except Exception as e:
+            print(f"Error getting stats: {e}")
+            return {'total': 0, 'by_type': {}, 'errors': 0}
+
+
 
 
 class PDFScanner:
     """Main PDF Scanner class with Ollama integration"""
     
-    def __init__(self, host: str = "localhost", port: int = 11434, model: str = "qwen3-vl:30b-a3b-instruct-q4_K_M", verbose: bool = False):
+    def __init__(self, host: str = "localhost", port: int = 11434, model: str = "qwen3-vl:30b-a3b-instruct-q4_K_M", verbose: bool = False, db_path: str = "pdfscanner.db"):
         """
         Initialize the PDF Scanner
 
@@ -39,12 +291,14 @@ class PDFScanner:
             port: Ollama server port
             model: Ollama model name
             verbose: Enable verbose logging
+            db_path: Path to SQLite database file
         """
         self.host = host
         self.port = port
         self.model = model
         self.base_url = f"http://{host}:{port}"
         self.logger = self._setup_logging(verbose)
+        self.db_manager = DatabaseManager(db_path)
         
     def _setup_logging(self, verbose: bool = False) -> logging.Logger:
         """Setup logging configuration"""
@@ -338,35 +592,56 @@ class PDFScanner:
     def scan_and_process(self, directory: str) -> None:
         """
         Scan directory and process all PDF files
-        
+
         Args:
             directory: Directory path to scan
         """
         self.logger.info(f"Starting PDF scan of directory: {directory}")
-        
+
         # Test Ollama connection first
         if not self.test_ollama_connection():
             self.logger.error("Cannot proceed without Ollama connection")
             return
-        
+
         # Scan for PDF files
         pdf_files = self.scan_directory(directory)
         if not pdf_files:
             self.logger.warning(f"No PDF files found in {directory}")
             return
-        
+
         success_count = 0
+        skipped_count = 0
         error_count = 0
-        
+
         for pdf_file in pdf_files:
-            result = self.process_pdf(pdf_file)
-            if result.get("error") is None:
-                success_count += 1
-            else:
+            # Generate hash to check if already processed
+            file_hash = self.generate_file_hash(pdf_file)
+            if not file_hash:
+                self.logger.error(f"Failed to generate hash for {pdf_file}")
                 error_count += 1
-        
+                continue
+
+            # Check if already in database
+            existing = self.db_manager.get_metadata(file_hash)
+            if existing:
+                self.logger.info(f"Skipping {pdf_file} - already processed")
+                skipped_count += 1
+                continue
+
+            # Process the PDF
+            result = self.process_pdf(pdf_file)
+            # Store in database
+            if self.db_manager.store_metadata(result):
+                if result.get("error") is None:
+                    success_count += 1
+                else:
+                    error_count += 1
+            else:
+                self.logger.error(f"Failed to store metadata for {pdf_file}")
+                error_count += 1
+
         # Log final summary
-        self.logger.info(f"Processing complete: {success_count} successful, {error_count} errors")
+        self.logger.info(f"Processing complete: {success_count} successful, {skipped_count} skipped, {error_count} errors")
     
 
 

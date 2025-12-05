@@ -60,6 +60,34 @@ python pdfscanner.py --directory /path/to/pdfs --verbose
 - `--port` (optional): Ollama server port (default: 11434)
 - `--model` (optional): Ollama model name (default: qwen3-vl:30b-a3b-instruct-q4_K_M)
 - `--verbose` (optional): Enable verbose logging
+## Web Interface
+
+The application includes a web interface for browsing and searching the PDF metadata database.
+
+### Starting the Web App
+
+```bash
+python webapp.py
+```
+
+The web app will be available at `http://localhost:4337`
+
+### Web App Features
+
+- **Search Interface**: Search across all metadata fields (filename, subject, summary, sender, recipient, document type, tags)
+- **Results List**: Browse search results with key metadata displayed
+- **PDF Preview**: Click on any result to view the PDF in an embedded viewer
+- **File Access**: Link to open PDFs in the system's default PDF viewer
+- **Responsive Design**: Works on desktop and mobile browsers
+
+### Web App Usage
+
+1. Start the web app: `python webapp.py`
+2. Open your browser to `http://localhost:4337`
+3. Use the search box to find PDFs by any metadata
+4. Click on results to preview PDFs and view full metadata
+5. Use the "Open PDF in new tab" link to view in your PDF reader
+
 
 ## Example Output
 
@@ -97,6 +125,7 @@ python pdfscanner.py --directory /path/to/pdfs --verbose
 - `requests>=2.31.0`: HTTP library for Ollama API calls
 - `PyPDF2>=3.0.1`: PDF metadata extraction
 - `pymupdf>=1.23.8`: PDF to image conversion for vision analysis
+- `flask>=2.3.0`: Web framework for the web interface
 
 ## Error Handling
 
