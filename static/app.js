@@ -129,17 +129,36 @@ function useRecentSearch(query) {
 
 function setupEventListeners() {
     const searchInput = document.getElementById('searchInput');
+    const searchClear = document.getElementById('searchClear');
+    
     searchInput.addEventListener('input', (e) => {
+        // Show/hide clear button
+        searchClear.style.display = e.target.value ? 'block' : 'none';
+        
         clearTimeout(searchTimeout);
         searchTimeout = setTimeout(() => {
             loadDocuments(e.target.value);
         }, 300);
     });
 
+    // Clear button click handler
+    searchClear.addEventListener('click', () => {
+        searchInput.value = '';
+        searchClear.style.display = 'none';
+        searchInput.focus();
+        loadDocuments('');
+    });
+
     // Save search on Enter or when user stops typing for a while
     searchInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && searchInput.value.trim()) {
             saveRecentSearch(searchInput.value.trim());
+        }
+        // Clear on Escape key
+        if (e.key === 'Escape') {
+            searchInput.value = '';
+            searchClear.style.display = 'none';
+            loadDocuments('');
         }
     });
 

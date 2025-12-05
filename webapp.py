@@ -17,6 +17,9 @@ from pdfscanner import DatabaseManager, PDFScanner
 app = Flask(__name__)
 db = DatabaseManager()
 
+# Reset indexing status on startup (in case server was restarted during indexing)
+db.reset_indexing_status()
+
 # Thread lock for indexing operations
 indexing_lock = threading.Lock()
 
