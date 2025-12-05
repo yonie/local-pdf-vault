@@ -169,4 +169,8 @@ scan_results_temp/
 !README.pdf
 !sample*.pdf
 
-.db
+# Database files (contain private metadata)
+*.db
+*.sqlite
+*.sqlite3
+pdfscanner.db
