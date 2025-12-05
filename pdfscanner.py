@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """
-PDF Scanner with Ollama Integration
+LocalPDFVault - AI-Powered Local Document Search
 
-A comprehensive PDF scanning application that recursively scans directories for PDF files,
-extracts metadata using local Ollama vision models, and outputs structured JSON data.
+A privacy-focused PDF indexing application that recursively scans directories for PDF files,
+extracts metadata using local Ollama vision models, and provides intelligent search capabilities.
+All processing happens locally on your machine - your documents never leave your computer.
 
-Author: Kilo Code
+Author: yonie (https://github.com/yonie)
+Developed with AI assistance
 """
 
 import os
@@ -248,8 +250,8 @@ class DatabaseManager:
         Calculate relevance score for a document with clear priority tiers:
         
         Priority Tiers (from highest to lowest):
-        1. Exact phrase match ("ronald klarenbeek" found as-is): +1000
-        2. All terms present (both "ronald" AND "klarenbeek" found): +500
+        1. Exact phrase match ("john doe" found as-is): +1000
+        2. All terms present (both "john" AND "doe" found): +500
         3. Partial matches (some terms found): +50 per term
         4. Fuzzy matches (similar words): +5 per match
         """
@@ -263,7 +265,7 @@ class DatabaseManager:
         fuzzy_matched_terms = set()
 
         # Tier 1: Exact phrase match (highest priority - 1000 points)
-        # This matches "ronald klarenbeek" as a complete phrase
+        # This matches "john doe" as a complete phrase
         if query_lower in text:
             score += 1000
             # Mark all terms as matched since the whole phrase is there
@@ -271,7 +273,7 @@ class DatabaseManager:
                 exact_matched_terms.add(term.lower())
 
         # Tier 2: All terms present (high priority - 500 points)
-        # Both "ronald" and "klarenbeek" are found, but not necessarily together
+        # Both "john" and "doe" are found, but not necessarily together
         all_terms_present = all(term.lower() in text for term in terms)
         if all_terms_present and len(terms) > 1:
             score += 500
@@ -279,7 +281,7 @@ class DatabaseManager:
                 exact_matched_terms.add(term.lower())
 
         # Tier 3: Individual/Partial term matches (medium priority - 50 per term)
-        # Only "ronald" OR only "klarenbeek" is found
+        # Only "john" OR only "doe" is found
         for term in terms:
             term_lower = term.lower()
             if term_lower in text:
@@ -296,7 +298,7 @@ class DatabaseManager:
                     score += 10
 
         # Tier 4: Fuzzy matching (lowest priority - 5 per match)
-        # Handles typos like "ronad" matching "ronald"
+        # Handles typos like "jhn" matching "john"
         words_in_text = text.split()
         for term in terms:
             term_lower = term.lower()

@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """
-PDF Scanner Web App
+LocalPDFVault Web Interface
 
-A web interface for querying the PDF metadata database and viewing PDFs.
+A privacy-focused web interface for searching and browsing your local PDF collection.
+All data stays on your computer - never sent to external services.
+
+Author: yonie (https://github.com/yonie)
+Developed with AI assistance
 """
 
 from flask import Flask, request, jsonify, send_file, render_template, Response
@@ -327,5 +331,5 @@ def reindex_single(filename):
         print(f"Reindex error: {e}")
 
 if __name__ == '__main__':
-    print("Starting PDF Scanner Web App on http://localhost:4337")
+    print("Starting LocalPDFVault Web Interface on http://localhost:4337")
     app.run(host='0.0.0.0', port=4337, debug=True)

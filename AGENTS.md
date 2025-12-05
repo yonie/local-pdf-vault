@@ -1,10 +1,10 @@
 # AI Agents Documentation
 
-This document describes the AI coding agents and collaboration process used to build the PDF Scanner with Ollama Integration system.
+This document describes the AI coding agents and collaboration process used to build the LocalPDFVault system.
 
 ## Project Overview
 
-The PDF Scanner project was developed by an AI coding agent specialized in Python development, system integration, and automation solutions. The system allows for intelligent document processing using local vision models.
+LocalPDFVault is a privacy-focused PDF indexing and search application developed with AI assistance. The system allows for intelligent document processing using local vision models, ensuring all data stays on the user's computer.
 
 ## Primary AI Agent: Kilo Code
 
@@ -152,13 +152,14 @@ The implementation includes multiple layers of quality assurance:
 
 ## Conclusion
 
-The PDF Scanner system represents a successful collaboration between AI agents focused on delivering a robust, production-ready tool for document analysis using local vision models. The system balances functionality with reliability, providing both automated processing capabilities and comprehensive error handling for real-world deployment scenarios.
+LocalPDFVault represents a successful collaboration between human developer and AI assistance, focused on delivering a robust, production-ready tool for document analysis using local vision models. The system balances functionality with reliability, providing both automated processing capabilities and comprehensive error handling for real-world deployment scenarios.
 
 The modular architecture and comprehensive documentation ensure the system can be maintained, extended, and deployed reliably in various environments where local document processing and privacy are requirements.
 
 ---
 
-**Development Completed**: 2024-12-05  
-**Primary Agent**: Kilo Code (AI Software Engineer)  
-**System Status**: Production Ready  
+**Development Completed**: 2025-12-05
+**Developer**: yonie (https://github.com/yonie)
+**AI Assistance**: Kilo Code
+**System Status**: Production Ready
 **Documentation Version**: 1.0
