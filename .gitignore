@@ -168,3 +168,5 @@ scan_results_temp/
 *.pdf
 !README.pdf
 !sample*.pdf
+
+.db

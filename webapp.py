@@ -222,6 +222,51 @@ HTML_TEMPLATE = """
             color: var(--text-muted);
         }
 
+        .recent-searches {
+            margin-top: 10px;
+        }
+
+        .recent-searches-label {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+        }
+
+        .recent-searches-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .recent-search-item {
+            background: var(--bg-dark);
+            border: 1px solid var(--border);
+            padding: 4px 10px;
+            border-radius: 14px;
+            font-size: 12px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .recent-search-item:hover {
+            border-color: var(--primary);
+            color: var(--text-primary);
+        }
+
+        .recent-search-remove {
+            font-size: 10px;
+            opacity: 0.5;
+        }
+
+        .recent-search-remove:hover {
+            opacity: 1;
+            color: var(--danger);
+        }
+
         /* Filters */
         .filters {
             padding: 12px 20px;
@@ -276,82 +321,146 @@ HTML_TEMPLATE = """
         .result-card {
             background: var(--bg-dark);
             border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 16px;
-            margin-bottom: 10px;
+            border-radius: 10px;
+            padding: 14px;
+            margin-bottom: 8px;
             cursor: pointer;
-            transition: all 0.2s;
+            transition: all 0.15s ease;
+            position: relative;
         }
 
         .result-card:hover {
-            border-color: var(--primary);
-            transform: translateX(4px);
+            border-color: var(--primary-light);
+            background: rgba(37, 99, 235, 0.05);
         }
 
         .result-card.active {
             border-color: var(--primary);
             background: rgba(37, 99, 235, 0.1);
+            box-shadow: 0 0 0 1px var(--primary);
         }
 
         .result-header {
             display: flex;
-            justify-content: space-between;
             align-items: flex-start;
-            margin-bottom: 8px;
+            gap: 10px;
+            margin-bottom: 6px;
         }
 
         .result-filename {
-            font-weight: 500;
-            font-size: 14px;
-            word-break: break-all;
+            font-weight: 600;
+            font-size: 13px;
+            color: var(--text-primary);
+            word-break: break-word;
             flex: 1;
+            line-height: 1.3;
         }
 
         .result-type {
-            background: var(--primary);
-            color: white;
-            padding: 3px 10px;
-            border-radius: 12px;
-            font-size: 11px;
+            background: var(--bg-hover);
+            color: var(--text-secondary);
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 10px;
             font-weight: 500;
             text-transform: uppercase;
-            margin-left: 10px;
             white-space: nowrap;
+            flex-shrink: 0;
         }
 
         .result-subject {
             color: var(--text-secondary);
-            font-size: 13px;
-            margin-bottom: 10px;
+            font-size: 12px;
+            margin-bottom: 8px;
             line-height: 1.4;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
         }
 
         .result-tags {
             display: flex;
             flex-wrap: wrap;
-            gap: 6px;
+            gap: 4px;
+            margin-bottom: 6px;
         }
 
         .tag {
             background: var(--bg-hover);
-            color: var(--text-secondary);
-            padding: 3px 10px;
-            border-radius: 6px;
-            font-size: 11px;
+            color: var(--text-muted);
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 10px;
         }
 
         .result-meta {
             display: flex;
-            gap: 16px;
-            margin-top: 10px;
-            font-size: 12px;
+            gap: 12px;
+            font-size: 11px;
             color: var(--text-muted);
+            border-top: 1px solid var(--border);
+            padding-top: 8px;
+            margin-top: 6px;
         }
 
         .result-meta-item {
             display: flex;
             align-items: center;
             gap: 4px;
+        }
+
+        .result-matches {
+            margin-top: 6px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+        }
+
+        .match-badge {
+            background: rgba(37, 99, 235, 0.2);
+            color: var(--primary-light);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 500;
+        }
+
+        .match-term {
+            font-weight: 600;
+        }
+
+        .match-fields {
+            opacity: 0.7;
+            font-size: 9px;
+            margin-left: 2px;
+        }
+
+        .match-score {
+            background: rgba(37, 99, 235, 0.2);
+            color: white;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            margin-left: 4px;
+        }
+
+        .match-score.high {
+            background: rgba(34, 197, 94, 0.3);
+            color: var(--success);
+        }
+
+        .match-score.medium {
+            background: rgba(37, 99, 235, 0.3);
+            color: var(--primary-light);
+        }
+
+        .match-score.low {
+            background: rgba(245, 158, 11, 0.3);
+            color: var(--warning);
         }
 
         /* Middle Panel - Details */
@@ -449,10 +558,104 @@ HTML_TEMPLATE = """
             flex: 1;
         }
 
+        .preview-content {
+            flex: 1;
+            overflow: auto;
+        }
+
         .preview-content iframe {
             width: 100%;
             height: 100%;
             border: none;
+        }
+
+        .pdfjs-container {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+
+        .pdfjs-toolbar {
+            padding: 8px 12px;
+            background: var(--bg-card);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .pdfjs-toolbar button {
+            padding: 6px 12px;
+            background: var(--bg-dark);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.2s;
+        }
+
+        .pdfjs-toolbar button:hover:not(:disabled) {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+
+        .pdfjs-toolbar button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .pdfjs-toolbar .page-info {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-left: auto;
+        }
+
+        .pdfjs-canvas {
+            flex: 1;
+            overflow: auto;
+            background: #1a1a1a;
+            cursor: grab;
+            position: relative;
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+        }
+
+        .pdfjs-canvas.dragging {
+            cursor: grabbing;
+            user-select: none;
+        }
+
+        .pdfjs-canvas-inner {
+            padding: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .pdfjs-canvas canvas {
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+            display: block;
+        }
+
+        .pdfjs-scroll-hint {
+            position: absolute;
+            bottom: 16px;
+            right: 16px;
+            background: rgba(0, 0, 0, 0.7);
+            color: var(--text-secondary);
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 11px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .pdfjs-canvas:hover .pdfjs-scroll-hint {
+            opacity: 1;
         }
 
         /* Legacy content area support */
@@ -826,17 +1029,59 @@ HTML_TEMPLATE = """
             text-overflow: ellipsis;
         }
 
-        .danger-zone {
-            background: rgba(239, 68, 68, 0.1);
+        .privacy-info {
+            background: rgba(34, 197, 94, 0.1);
             padding: 16px;
             border-radius: 10px;
-            border: 1px solid rgba(239, 68, 68, 0.3);
+            border: 1px solid rgba(34, 197, 94, 0.3);
         }
 
-        .danger-zone p {
+        .privacy-info p {
             font-size: 13px;
+            color: var(--text-secondary);
+            margin-bottom: 10px;
+            line-height: 1.5;
+        }
+
+        .config-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            background: var(--bg-dark);
+            border-radius: 8px;
+            margin-bottom: 8px;
+            font-size: 13px;
+        }
+
+        .config-item-label {
             color: var(--text-muted);
-            margin-bottom: 12px;
+            min-width: 100px;
+        }
+
+        .config-item-value {
+            color: var(--text-primary);
+            font-family: monospace;
+            word-break: break-all;
+        }
+
+        .last-indexed-info {
+            margin-top: 12px;
+            padding: 12px;
+            background: var(--bg-dark);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .last-indexed-info span {
+            font-size: 12px;
+            color: var(--text-secondary);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
         .btn-danger {
@@ -846,27 +1091,6 @@ HTML_TEMPLATE = """
 
         .btn-danger:hover {
             background: #dc2626;
-        }
-
-        /* Delete button in results */
-        .result-delete {
-            opacity: 0;
-            background: none;
-            border: none;
-            color: var(--danger);
-            cursor: pointer;
-            padding: 4px 8px;
-            border-radius: 6px;
-            font-size: 14px;
-            transition: all 0.2s;
-        }
-
-        .result-card:hover .result-delete {
-            opacity: 1;
-        }
-
-        .result-delete:hover {
-            background: rgba(239, 68, 68, 0.2);
         }
 
         /* Responsive */
@@ -927,6 +1151,10 @@ HTML_TEMPLATE = """
                         <input type="text" class="search-input" id="searchInput"
                                placeholder="Search documents..."
                                autocomplete="off">
+                    </div>
+                    <div class="recent-searches" id="recentSearches" style="display: none;">
+                        <div class="recent-searches-label">Recent searches</div>
+                        <div class="recent-searches-list" id="recentSearchesList"></div>
                     </div>
                 </div>
                 <div class="filters" id="filters">
@@ -992,19 +1220,22 @@ HTML_TEMPLATE = """
                     <div id="typeBreakdown" class="type-breakdown"></div>
                 </div>
 
-                <!-- Indexing Section -->
+                <!-- Scan for Files Section -->
                 <div class="admin-section">
-                    <h3>📁 Index Directory</h3>
+                    <h3>📂 Scan PDF Files</h3>
+                    <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">
+                        Enter a folder path to scan for PDFs. New files will be added to the index.
+                    </p>
                     <div class="index-form">
                         <input type="text" id="indexPath" class="index-input"
-                               placeholder="Enter directory path to scan (e.g., C:\\Documents\\PDFs)">
+                               placeholder="e.g., C:\\Documents\\PDFs">
                         <button class="btn btn-primary" onclick="startIndexing()" id="indexBtn">
-                            🔍 Start Indexing
+                            🔍 Scan
                         </button>
                     </div>
                     <div class="index-progress" id="indexProgress" style="display: none;">
                         <div class="progress-header">
-                            <span id="progressStatus">Indexing...</span>
+                            <span id="progressStatus">Scanning...</span>
                             <span id="progressCount">0/0</span>
                         </div>
                         <div class="progress-bar-container">
@@ -1014,13 +1245,38 @@ HTML_TEMPLATE = """
                     </div>
                 </div>
 
-                <!-- Danger Zone -->
-                <div class="admin-section danger-zone">
-                    <h3>⚠️ Danger Zone</h3>
-                    <p>These actions cannot be undone.</p>
-                    <button class="btn btn-danger" onclick="clearDatabase()">
-                        🗑️ Clear All Data
+                <!-- Maintenance Section -->
+                <div class="admin-section">
+                    <h3>🔧 Maintenance</h3>
+                    <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">
+                        Reset the database by re-analyzing all documents with AI. This only updates the search index - your PDF files remain untouched on disk.
+                    </p>
+                    <button class="btn btn-primary" onclick="clearAndRescan()" style="width: 100%;">
+                        🔄 Reset Index (Re-analyze All Files)
                     </button>
+                </div>
+
+                <!-- Privacy & System Info -->
+                <div class="admin-section privacy-info">
+                    <h3>🔒 Privacy & System Info</h3>
+                    <p>
+                        <strong>Your data stays on your computer.</strong> All document information is stored locally.
+                        AI analysis is performed using the server shown below - verify these settings to confirm where your data is processed.
+                    </p>
+                    <div id="systemConfigInfo">
+                        <div class="config-item">
+                            <span class="config-item-label">📁 Database:</span>
+                            <span class="config-item-value" id="configDbPath">Loading...</span>
+                        </div>
+                        <div class="config-item">
+                            <span class="config-item-label">🖥️ AI Server:</span>
+                            <span class="config-item-value" id="configOllamaUrl">Loading...</span>
+                        </div>
+                        <div class="config-item">
+                            <span class="config-item-label">🤖 AI Model:</span>
+                            <span class="config-item-value" id="configModel">Loading...</span>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1031,6 +1287,7 @@ HTML_TEMPLATE = """
         let currentFilter = 'all';
         let currentHash = null;
         let searchTimeout = null;
+        let currentSearchQuery = '';  // Track if we have an active search
 
         // Layout Management
         let panelSizes = {};
@@ -1038,10 +1295,104 @@ HTML_TEMPLATE = """
         // Initialize
         document.addEventListener('DOMContentLoaded', () => {
             loadLayoutPreferences();
-            loadDocuments();
+            loadSavedIndexPath();
+            loadQueryFromUrl();
             setupEventListeners();
             setupResizers();
+            setupModalHandlers();
         });
+
+        // URL query parameter handling
+        function loadQueryFromUrl() {
+            const params = new URLSearchParams(window.location.search);
+            const query = params.get('q') || '';
+            document.getElementById('searchInput').value = query;
+            loadDocuments(query);
+        }
+
+        function updateUrlWithQuery(query) {
+            const url = new URL(window.location);
+            if (query && query.trim()) {
+                url.searchParams.set('q', query);
+            } else {
+                url.searchParams.delete('q');
+            }
+            window.history.replaceState({}, '', url);
+        }
+
+        // LocalStorage keys
+        const INDEX_PATH_KEY = 'pdfScanner_lastIndexPath';
+        const RECENT_SEARCHES_KEY = 'pdfScanner_recentSearches';
+        const MAX_RECENT_SEARCHES = 8;
+
+        function loadSavedIndexPath() {
+            const savedPath = localStorage.getItem(INDEX_PATH_KEY);
+            if (savedPath) {
+                document.getElementById('indexPath').value = savedPath;
+            }
+        }
+
+        function saveIndexPath(path) {
+            localStorage.setItem(INDEX_PATH_KEY, path);
+        }
+
+        // Recent Searches Functions
+        function getRecentSearches() {
+            try {
+                const saved = localStorage.getItem(RECENT_SEARCHES_KEY);
+                return saved ? JSON.parse(saved) : [];
+            } catch (e) {
+                return [];
+            }
+        }
+
+        function saveRecentSearch(query) {
+            if (!query || query.length < 2) return;
+            
+            let searches = getRecentSearches();
+            // Remove if already exists (to move to front)
+            searches = searches.filter(s => s.toLowerCase() !== query.toLowerCase());
+            // Add to beginning
+            searches.unshift(query);
+            // Keep only MAX_RECENT_SEARCHES
+            searches = searches.slice(0, MAX_RECENT_SEARCHES);
+            localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(searches));
+            renderRecentSearches();
+        }
+
+        function removeRecentSearch(query) {
+            let searches = getRecentSearches();
+            searches = searches.filter(s => s !== query);
+            localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(searches));
+            renderRecentSearches();
+        }
+
+        function renderRecentSearches() {
+            const searches = getRecentSearches();
+            const container = document.getElementById('recentSearches');
+            const list = document.getElementById('recentSearchesList');
+            
+            if (searches.length === 0) {
+                container.style.display = 'none';
+                return;
+            }
+            
+            container.style.display = 'block';
+            list.innerHTML = searches.map(search => `
+                <span class="recent-search-item" onclick="useRecentSearch('${escapeHtml(search).replace(/'/g, "\\'")}')">
+                    ${escapeHtml(search)}
+                    <span class="recent-search-remove" onclick="event.stopPropagation(); removeRecentSearch('${escapeHtml(search).replace(/'/g, "\\'")}')">✕</span>
+                </span>
+            `).join('');
+        }
+
+        function useRecentSearch(query) {
+            document.getElementById('searchInput').value = query;
+            document.getElementById('recentSearches').style.display = 'none';
+            loadDocuments(query);
+            // Move to front of recent searches
+            saveRecentSearch(query);
+        }
 
         function setupEventListeners() {
             const searchInput = document.getElementById('searchInput');
@@ -1050,6 +1401,29 @@ HTML_TEMPLATE = """
                 searchTimeout = setTimeout(() => {
                     loadDocuments(e.target.value);
                 }, 300);
+            });
+
+            // Save search on Enter or when user stops typing for a while
+            searchInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && searchInput.value.trim()) {
+                    saveRecentSearch(searchInput.value.trim());
+                }
+            });
+
+            // Show recent searches when input is focused and empty
+            searchInput.addEventListener('focus', () => {
+                if (!searchInput.value.trim()) {
+                    renderRecentSearches();
+                }
+            });
+
+            // Hide recent searches when clicking outside
+            document.addEventListener('click', (e) => {
+                const recentSearches = document.getElementById('recentSearches');
+                const searchBox = document.querySelector('.search-box');
+                if (!searchBox.contains(e.target) && !recentSearches.contains(e.target)) {
+                    recentSearches.style.display = 'none';
+                }
             });
 
             document.getElementById('filters').addEventListener('click', (e) => {
@@ -1062,7 +1436,27 @@ HTML_TEMPLATE = """
             });
         }
 
+        function setupModalHandlers() {
+            const modal = document.getElementById('adminModal');
+            
+            // Close on Escape key
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' && modal.classList.contains('active')) {
+                    closeAdminPanel();
+                }
+            });
+            
+            // Close when clicking on overlay (outside modal content)
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    closeAdminPanel();
+                }
+            });
+        }
+
         async function loadDocuments(query = '') {
+            currentSearchQuery = query;  // Track the search query
+            updateUrlWithQuery(query);  // Update URL with query
             try {
                 const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
                 allResults = await response.json();
@@ -1070,6 +1464,11 @@ HTML_TEMPLATE = """
                 document.getElementById('totalDocs').textContent = allResults.length;
                 updateFilters();
                 applyFilter();
+                
+                // Hide recent searches when we have search results
+                if (query) {
+                    document.getElementById('recentSearches').style.display = 'none';
+                }
             } catch (error) {
                 console.error('Error loading documents:', error);
                 document.getElementById('resultsList').innerHTML = `
@@ -1109,9 +1508,9 @@ HTML_TEMPLATE = """
         function displayResults(results) {
             const container = document.getElementById('resultsList');
             const countEl = document.getElementById('resultsCount');
-            
+
             countEl.textContent = `${results.length} document${results.length !== 1 ? 's' : ''}`;
-            
+
             if (results.length === 0) {
                 container.innerHTML = `
                     <div class="no-results">
@@ -1121,13 +1520,18 @@ HTML_TEMPLATE = """
                 `;
                 return;
             }
-            
+
             container.innerHTML = results.map(result => {
                 const filename = result.filename.split(/[/\\\\]/).pop();
                 const tags = (result.tags || []).slice(0, 4);
-                
+                const matches = result.search_matches || [];
+                const relevanceScore = result.relevance_score || 0;
+                // Only show match percentage when there's an active search
+                const showScore = currentSearchQuery && currentSearchQuery.trim() && relevanceScore > 0;
+                const matchPercent = showScore ? getMatchPercent(relevanceScore) : { show: false };
+
                 return `
-                    <div class="result-card ${result.file_hash === currentHash ? 'active' : ''}" 
+                    <div class="result-card ${result.file_hash === currentHash ? 'active' : ''}"
                          onclick="showDocument('${result.file_hash}')">
                         <div class="result-header">
                             <span class="result-filename">${escapeHtml(filename)}</span>
@@ -1139,10 +1543,24 @@ HTML_TEMPLATE = """
                                 ${tags.map(tag => `<span class="tag">${escapeHtml(tag)}</span>`).join('')}
                             </div>
                         ` : ''}
+                        ${matches.length > 0 ? `
+                            <div class="result-matches">
+                                ${matches.map(match => `
+                                    <span class="match-badge">
+                                        <span class="match-term">${escapeHtml(match.term)}</span>
+                                        <span class="match-fields">(${match.fields.join(', ')})</span>
+                                    </span>
+                                `).join('')}
+                                ${showScore && matchPercent.show ? `
+                                    <span class="match-score ${matchPercent.level}" title="${matchPercent.label}">
+                                        ${matchPercent.percent}%
+                                    </span>
+                                ` : ''}
+                            </div>
+                        ` : ''}
                         <div class="result-meta">
                             ${result.date ? `<span class="result-meta-item">📅 ${escapeHtml(result.date)}</span>` : ''}
                             ${result.sender ? `<span class="result-meta-item">👤 ${escapeHtml(result.sender)}</span>` : ''}
-                            <button class="result-delete" onclick="event.stopPropagation(); deleteDocument('${result.file_hash}')" title="Delete">🗑️</button>
                         </div>
                     </div>
                 `;
@@ -1153,6 +1571,7 @@ HTML_TEMPLATE = """
         function openAdminPanel() {
             document.getElementById('adminModal').classList.add('active');
             loadStats();
+            loadSystemConfig();
         }
 
         function closeAdminPanel() {
@@ -1183,6 +1602,22 @@ HTML_TEMPLATE = """
             }
         }
 
+        async function loadSystemConfig() {
+            try {
+                const response = await fetch('/api/config');
+                const config = await response.json();
+                
+                document.getElementById('configDbPath').textContent = config.database_path || 'Unknown';
+                document.getElementById('configOllamaUrl').textContent = config.ollama_url || 'Unknown';
+                document.getElementById('configModel').textContent = config.model || 'Unknown';
+            } catch (error) {
+                console.error('Error loading config:', error);
+                document.getElementById('configDbPath').textContent = 'Error loading';
+                document.getElementById('configOllamaUrl').textContent = 'Error loading';
+                document.getElementById('configModel').textContent = 'Error loading';
+            }
+        }
+
         let indexingInterval = null;
 
         async function startIndexing() {
@@ -1194,7 +1629,7 @@ HTML_TEMPLATE = """
 
             const btn = document.getElementById('indexBtn');
             btn.disabled = true;
-            btn.innerHTML = '⏳ Starting...';
+            btn.innerHTML = '⏳ Scanning...';
 
             try {
                 const response = await fetch('/api/index', {
@@ -1206,18 +1641,94 @@ HTML_TEMPLATE = """
                 const result = await response.json();
                 
                 if (result.success) {
+                    // Save the path to localStorage
+                    saveIndexPath(path);
                     document.getElementById('indexProgress').style.display = 'block';
                     startProgressPolling();
                 } else {
                     alert('Error: ' + result.error);
                     btn.disabled = false;
-                    btn.innerHTML = '🔍 Start Indexing';
+                    btn.innerHTML = '🔍 Scan Folder';
                 }
             } catch (error) {
                 alert('Error starting indexing: ' + error);
                 btn.disabled = false;
                 btn.innerHTML = '🔍 Start Indexing';
             }
+        }
+
+        async function startReindexing(path) {
+            if (!path) {
+                alert('Please enter a directory path');
+                return;
+            }
+
+            const btn = document.getElementById('indexBtn');
+            btn.disabled = true;
+            btn.innerHTML = '⏳ Scanning...';
+
+            try {
+                const response = await fetch('/api/index', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path: path, force: true })
+                });
+
+                const result = await response.json();
+                
+                if (result.success) {
+                    saveIndexPath(path);
+                    document.getElementById('indexProgress').style.display = 'block';
+                    startProgressPolling();
+                } else {
+                    alert('Error: ' + result.error);
+                    btn.disabled = false;
+                    btn.innerHTML = '🔍 Scan Folder';
+                }
+            } catch (error) {
+                alert('Error starting analysis: ' + error);
+                btn.disabled = false;
+                btn.innerHTML = '🔍 Scan Folder';
+            }
+        }
+
+        async function clearIndex() {
+            if (!confirm('Remove all document records from the database?\\n\\nThis will clear the index - your actual PDF files will NOT be deleted.')) return;
+            
+            try {
+                const response = await fetch('/api/clear', { method: 'DELETE' });
+                const result = await response.json();
+                
+                if (result.success) {
+                    loadStats();
+                    loadDocuments();
+                    alert('All records removed successfully. You can scan your folders again to rebuild the index.');
+                } else {
+                    alert('Error clearing index');
+                }
+            } catch (error) {
+                alert('Error: ' + error);
+            }
+        }
+
+        async function clearAndRescan() {
+            const savedPath = localStorage.getItem(INDEX_PATH_KEY);
+            if (!savedPath) {
+                alert('No previously scanned folder found. Please enter a folder path first.');
+                return;
+            }
+            
+            if (!confirm(`Refresh the search index for:\\n${savedPath}\\n\\nThis will clear the database and re-analyze all PDFs with fresh AI analysis.\\n\\n⚠️ Your PDF files will NOT be modified or deleted - only the search database will be updated.\\n\\nThis may take a while. Continue?`)) return;
+            
+            // First clear the index
+            try {
+                await fetch('/api/clear', { method: 'DELETE' });
+            } catch (error) {
+                console.error('Error clearing index:', error);
+            }
+            
+            // Then start re-indexing
+            startReindexing(savedPath);
         }
 
         function startProgressPolling() {
@@ -1241,7 +1752,7 @@ HTML_TEMPLATE = """
                         clearInterval(indexingInterval);
                         indexingInterval = null;
                         document.getElementById('indexBtn').disabled = false;
-                        document.getElementById('indexBtn').innerHTML = '🔍 Start Indexing';
+                        document.getElementById('indexBtn').innerHTML = '🔍 Scan Folder';
                         loadStats();
                         loadDocuments();
                     }
@@ -1284,25 +1795,6 @@ HTML_TEMPLATE = """
             }
         }
 
-        async function clearDatabase() {
-            if (!confirm('Are you sure you want to delete ALL indexed documents?\\n\\nThis cannot be undone!')) return;
-            if (!confirm('FINAL WARNING: This will permanently delete all document metadata. Continue?')) return;
-            
-            try {
-                const response = await fetch('/api/clear', { method: 'DELETE' });
-                const result = await response.json();
-                
-                if (result.success) {
-                    loadStats();
-                    loadDocuments();
-                    closeAdminPanel();
-                } else {
-                    alert('Error clearing database');
-                }
-            } catch (error) {
-                alert('Error: ' + error);
-            }
-        }
 
         function showDocument(hash) {
             const result = allResults.find(r => r.file_hash === hash);
@@ -1328,9 +1820,6 @@ HTML_TEMPLATE = """
                         </a>
                         <button class="btn btn-secondary btn-sm" onclick="copyPath('${escapeHtml(result.filename).replace(/'/g, "\\'")}')">
                             📋 Copy Path
-                        </button>
-                        <button class="btn btn-secondary btn-sm" onclick="deleteDocument('${hash}')">
-                            🗑️ Delete
                         </button>
                     </div>
                 </div>
@@ -1389,17 +1878,21 @@ HTML_TEMPLATE = """
             
             // Update preview panel (right)
             document.getElementById('previewPanel').innerHTML = `
-                <div class="preview-header">PDF Preview</div>
+                <div class="preview-header">PDF Preview - Scroll or drag to navigate</div>
                 <div class="pdfjs-container">
                     <div class="pdfjs-toolbar">
                         <button onclick="pdfViewer.prevPage()" id="prevBtn" disabled>◀ Prev</button>
                         <button onclick="pdfViewer.nextPage()" id="nextBtn" disabled>Next ▶</button>
                         <button onclick="pdfViewer.zoomIn()">🔍+</button>
                         <button onclick="pdfViewer.zoomOut()">🔍-</button>
-                        <button onclick="pdfViewer.fitToWidth()">↔ Fit Width</button>
+                        <button onclick="pdfViewer.fitToWidth()">↔ Fit</button>
+                        <button onclick="pdfViewer.resetView()">⟲ Reset</button>
                         <span class="page-info" id="pageInfo">Loading...</span>
                     </div>
-                    <div class="pdfjs-canvas" id="pdfCanvas"></div>
+                    <div class="pdfjs-canvas" id="pdfCanvas">
+                        <div class="pdfjs-canvas-inner" id="pdfCanvasInner"></div>
+                        <div class="pdfjs-scroll-hint">🖱️ Scroll or drag to pan</div>
+                    </div>
                 </div>
             `;
 
@@ -1421,6 +1914,36 @@ HTML_TEMPLATE = """
             });
         }
 
+        function getMatchPercent(score) {
+            // Convert numeric relevance score to 0-100% for display
+            // Only show percentage when there's an active search (score > 0)
+            // Score tiers from pdfscanner.py:
+            // 1000+ = exact phrase match (100%)
+            // 500-999 = all terms present (80-95%)
+            // 100-499 = multiple term matches (50-75%)
+            // 50-99 = single term match (30-45%)
+            // 1-49 = fuzzy match only (10-25%)
+            // 0 = no search query or no match
+            
+            if (score <= 0) {
+                return { show: false, percent: 0, level: '', label: '' };
+            } else if (score >= 1000) {
+                return { show: true, percent: 100, level: 'high', label: 'Perfect match - exact phrase found' };
+            } else if (score >= 500) {
+                const pct = Math.min(95, 80 + Math.floor((score - 500) / 50));
+                return { show: true, percent: pct, level: 'high', label: 'All search terms found' };
+            } else if (score >= 100) {
+                const pct = Math.min(75, 50 + Math.floor((score - 100) / 16));
+                return { show: true, percent: pct, level: 'medium', label: 'Multiple terms found' };
+            } else if (score >= 50) {
+                const pct = Math.min(45, 30 + Math.floor((score - 50) / 5));
+                return { show: true, percent: pct, level: 'medium', label: 'Partial match' };
+            } else {
+                const pct = Math.min(25, 10 + Math.floor(score / 4));
+                return { show: true, percent: pct, level: 'low', label: 'Similar' };
+            }
+        }
+
         function escapeHtml(text) {
             if (!text) return '';
             const div = document.createElement('div');
@@ -1428,7 +1951,7 @@ HTML_TEMPLATE = """
             return div.innerHTML;
         }
 
-        // PDF.js Viewer Class
+        // PDF.js Viewer Class with drag-to-pan support
         class PDFViewer {
             constructor(hash) {
                 this.hash = hash;
@@ -1437,12 +1960,72 @@ HTML_TEMPLATE = """
                 this.pageRendering = false;
                 this.pageNumPending = null;
                 this.scale = 1.5;
+                this.defaultScale = 1.5;
                 this.canvas = document.getElementById('pdfCanvas');
+                this.canvasInner = document.getElementById('pdfCanvasInner');
                 this.prevBtn = document.getElementById('prevBtn');
                 this.nextBtn = document.getElementById('nextBtn');
                 this.pageInfo = document.getElementById('pageInfo');
-
+                
+                // Drag-to-pan state
+                this.isDragging = false;
+                this.startX = 0;
+                this.startY = 0;
+                this.scrollLeft = 0;
+                this.scrollTop = 0;
+                
+                this.setupDragToPan();
                 this.loadPDF();
+            }
+
+            setupDragToPan() {
+                const container = this.canvas;
+                
+                container.addEventListener('mousedown', (e) => {
+                    // Only on left click and not on buttons
+                    if (e.button !== 0 || e.target.tagName === 'BUTTON') return;
+                    
+                    this.isDragging = true;
+                    container.classList.add('dragging');
+                    this.startX = e.pageX - container.offsetLeft;
+                    this.startY = e.pageY - container.offsetTop;
+                    this.scrollLeft = container.scrollLeft;
+                    this.scrollTop = container.scrollTop;
+                    e.preventDefault();
+                });
+
+                container.addEventListener('mouseleave', () => {
+                    this.isDragging = false;
+                    container.classList.remove('dragging');
+                });
+
+                container.addEventListener('mouseup', () => {
+                    this.isDragging = false;
+                    container.classList.remove('dragging');
+                });
+
+                container.addEventListener('mousemove', (e) => {
+                    if (!this.isDragging) return;
+                    e.preventDefault();
+                    const x = e.pageX - container.offsetLeft;
+                    const y = e.pageY - container.offsetTop;
+                    const walkX = (x - this.startX) * 1.5; // Scroll speed multiplier
+                    const walkY = (y - this.startY) * 1.5;
+                    container.scrollLeft = this.scrollLeft - walkX;
+                    container.scrollTop = this.scrollTop - walkY;
+                });
+
+                // Mouse wheel zoom
+                container.addEventListener('wheel', (e) => {
+                    if (e.ctrlKey) {
+                        e.preventDefault();
+                        if (e.deltaY < 0) {
+                            this.zoomIn();
+                        } else {
+                            this.zoomOut();
+                        }
+                    }
+                }, { passive: false });
             }
 
             async loadPDF() {
@@ -1495,8 +2078,8 @@ HTML_TEMPLATE = """
                     canvas.width = viewport.width;
                     canvas.className = 'pdfjs-page';
 
-                    // Clear previous content
-                    this.canvas.innerHTML = '';
+                    // Clear previous content but keep the inner container
+                    this.canvasInner.innerHTML = '';
 
                     const renderContext = {
                         canvasContext: context,
@@ -1505,7 +2088,7 @@ HTML_TEMPLATE = """
 
                     const renderTask = page.render(renderContext);
                     renderTask.promise.then(() => {
-                        this.canvas.appendChild(canvas);
+                        this.canvasInner.appendChild(canvas);
                         this.pageRendering = false;
 
                         if (this.pageNumPending !== null) {
@@ -1531,6 +2114,9 @@ HTML_TEMPLATE = """
                 this.pageNum--;
                 this.queueRenderPage(this.pageNum);
                 this.updateButtons();
+                // Reset scroll position when changing pages
+                this.canvas.scrollTop = 0;
+                this.canvas.scrollLeft = 0;
             }
 
             nextPage() {
@@ -1538,15 +2124,19 @@ HTML_TEMPLATE = """
                 this.pageNum++;
                 this.queueRenderPage(this.pageNum);
                 this.updateButtons();
+                // Reset scroll position when changing pages
+                this.canvas.scrollTop = 0;
+                this.canvas.scrollLeft = 0;
             }
 
             zoomIn() {
-                this.scale *= 1.2;
+                this.scale *= 1.25;
                 this.queueRenderPage(this.pageNum);
             }
 
             zoomOut() {
-                this.scale /= 1.2;
+                this.scale /= 1.25;
+                if (this.scale < 0.5) this.scale = 0.5;
                 this.queueRenderPage(this.pageNum);
             }
 
@@ -1560,6 +2150,13 @@ HTML_TEMPLATE = """
                 });
             }
 
+            resetView() {
+                this.scale = this.defaultScale;
+                this.canvas.scrollTop = 0;
+                this.canvas.scrollLeft = 0;
+                this.queueRenderPage(this.pageNum);
+            }
+
             updateButtons() {
                 if (!this.pdfDoc) return;
                 this.prevBtn.disabled = this.pageNum <= 1;
@@ -1567,8 +2164,8 @@ HTML_TEMPLATE = """
             }
 
             destroy() {
-                if (this.canvas) {
-                    this.canvas.innerHTML = '';
+                if (this.canvasInner) {
+                    this.canvasInner.innerHTML = '';
                 }
             }
         }
@@ -1681,6 +2278,23 @@ def get_stats():
     stats = db.get_stats()
     return jsonify(stats)
 
+@app.route('/api/config')
+def get_config():
+    """Return system configuration for privacy info display"""
+    # Get absolute path of database
+    db_path = os.path.abspath(db.db_path)
+    
+    # Default Ollama settings (matching PDFScanner defaults)
+    ollama_host = "localhost"
+    ollama_port = 11434
+    ollama_model = "qwen3-vl:30b-a3b-instruct-q4_K_M"
+    
+    return jsonify({
+        'database_path': db_path,
+        'ollama_url': f"http://{ollama_host}:{ollama_port}",
+        'model': ollama_model
+    })
+
 @app.route('/api/delete/<file_hash>', methods=['DELETE'])
 def delete_document(file_hash):
     success = db.delete_metadata(file_hash)
@@ -1697,6 +2311,7 @@ def start_indexing():
     
     data = request.get_json()
     path = data.get('path', '')
+    force = data.get('force', False)  # Force re-indexing even if already indexed
     
     if not path:
         return jsonify({'success': False, 'error': 'No path provided'})
@@ -1718,11 +2333,12 @@ def start_indexing():
             'total': 0,
             'skipped': 0,
             'errors': 0,
-            'last_directory': path
+            'last_directory': path,
+            'force_reindex': force
         }
     
     # Start indexing in background thread
-    thread = threading.Thread(target=run_indexing, args=(path,))
+    thread = threading.Thread(target=run_indexing, args=(path, force))
     thread.daemon = True
     thread.start()
     
@@ -1753,7 +2369,7 @@ def reindex_document(file_hash):
     
     return jsonify({'success': True})
 
-def run_indexing(directory):
+def run_indexing(directory, force_reindex=False):
     global indexing_state
     
     try:
@@ -1784,12 +2400,17 @@ def run_indexing(directory):
                     indexing_state['processed'] += 1
                 continue
             
-            # Check if already exists
-            if db.get_metadata(file_hash):
+            # Check if already exists (skip if not force re-indexing)
+            existing = db.get_metadata(file_hash)
+            if existing and not force_reindex:
                 with indexing_lock:
                     indexing_state['skipped'] += 1
                     indexing_state['processed'] += 1
                 continue
+            
+            # If force re-indexing, delete existing entry first
+            if existing and force_reindex:
+                db.delete_metadata(file_hash)
             
             # Process
             result = scanner.process_pdf(pdf_file)

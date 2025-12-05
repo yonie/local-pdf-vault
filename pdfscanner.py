@@ -130,47 +130,201 @@ class DatabaseManager:
 
     def search_metadata(self, query: str, limit: int = 50) -> List[Dict[str, Any]]:
         """
-        Search metadata across all text fields
+        Search metadata with relevance ranking and fuzzy matching
+
+        Priority order:
+        1. Exact phrase matches (highest)
+        2. All terms present (high)
+        3. Some terms present (medium)
+        4. Fuzzy matches (lowest)
 
         Args:
             query: Search query string
             limit: Maximum number of results
 
         Returns:
-            List of matching metadata dictionaries
+            List of matching metadata dictionaries with relevance scores
         """
         try:
+            import difflib
+
             with self._get_connection() as conn:
-                # Search across filename, subject, summary, sender, recipient, document_type, and tags
-                sql = '''
-                    SELECT * FROM pdf_metadata
-                    WHERE filename LIKE ? OR subject LIKE ? OR summary LIKE ?
-                       OR sender LIKE ? OR recipient LIKE ? OR document_type LIKE ?
-                       OR tags LIKE ?
-                    ORDER BY last_updated DESC
-                    LIMIT ?
-                '''
-                search_pattern = f'%{query}%'
-                cursor = conn.execute(sql, (search_pattern,) * 7 + (limit,))
-                results = []
+                # Enable case-insensitive search
+                conn.execute("PRAGMA case_sensitive_like = FALSE")
+
+                # Split query into individual terms
+                terms = [term.strip() for term in query.split() if term.strip()]
+                if not terms:
+                    return []
+
+                # Get all documents first (we'll rank them in Python)
+                cursor = conn.execute('SELECT * FROM pdf_metadata')
+                all_docs = []
                 for row in cursor.fetchall():
-                    results.append({
+                    metadata = {
                         'file_hash': row[0],
                         'filename': row[1],
-                        'subject': row[2],
-                        'summary': row[3],
+                        'subject': row[2] or '',
+                        'summary': row[3] or '',
                         'date': row[4],
-                        'sender': row[5],
-                        'recipient': row[6],
-                        'document_type': row[7],
+                        'sender': row[5] or '',
+                        'recipient': row[6] or '',
+                        'document_type': row[7] or '',
                         'tags': json.loads(row[8]) if row[8] else [],
                         'error': row[9],
                         'last_updated': row[10]
-                    })
-                return results
+                    }
+                    all_docs.append(metadata)
+
+                # Score and rank documents
+                scored_results = []
+                query_lower = query.lower()
+
+                for doc in all_docs:
+                    # Combine all searchable text
+                    searchable_text = ' '.join([
+                        doc['filename'],
+                        doc['subject'],
+                        doc['summary'],
+                        doc['sender'],
+                        doc['recipient'],
+                        doc['document_type'],
+                        ' '.join(doc['tags'])
+                    ]).lower()
+
+                    # Calculate relevance score
+                    score = self._calculate_relevance_score(query_lower, terms, searchable_text)
+
+                    if score > 0:
+                        # Find which terms matched and in which fields
+                        matches = self._find_term_matches(terms, doc)
+
+                        doc_copy = doc.copy()
+                        doc_copy['relevance_score'] = score
+                        doc_copy['search_matches'] = matches
+                        scored_results.append(doc_copy)
+
+                # Sort by relevance score (descending), then by last_updated (descending)
+                # last_updated is a string timestamp so we sort it as a string (ISO format sorts correctly)
+                scored_results.sort(key=lambda x: (-x['relevance_score'], x.get('last_updated', '') or ''), reverse=False)
+                # Re-sort to handle the string timestamp properly
+                scored_results.sort(key=lambda x: x['relevance_score'], reverse=True)
+
+                return scored_results[:limit]
+
         except Exception as e:
             print(f"Error searching metadata: {e}")
             return []
+
+    def _calculate_relevance_score(self, query_lower: str, terms: List[str], text: str) -> float:
+        """
+        Calculate relevance score for a document with clear priority tiers:
+        
+        Priority Tiers (from highest to lowest):
+        1. Exact phrase match ("ronald klarenbeek" found as-is): +1000
+        2. All terms present (both "ronald" AND "klarenbeek" found): +500
+        3. Partial matches (some terms found): +50 per term
+        4. Fuzzy matches (similar words): +5 per match
+        """
+        if not text:
+            return 0
+
+        import difflib
+        
+        score = 0
+        exact_matched_terms = set()
+        fuzzy_matched_terms = set()
+
+        # Tier 1: Exact phrase match (highest priority - 1000 points)
+        # This matches "ronald klarenbeek" as a complete phrase
+        if query_lower in text:
+            score += 1000
+            # Mark all terms as matched since the whole phrase is there
+            for term in terms:
+                exact_matched_terms.add(term.lower())
+
+        # Tier 2: All terms present (high priority - 500 points)
+        # Both "ronald" and "klarenbeek" are found, but not necessarily together
+        all_terms_present = all(term.lower() in text for term in terms)
+        if all_terms_present and len(terms) > 1:
+            score += 500
+            for term in terms:
+                exact_matched_terms.add(term.lower())
+
+        # Tier 3: Individual/Partial term matches (medium priority - 50 per term)
+        # Only "ronald" OR only "klarenbeek" is found
+        for term in terms:
+            term_lower = term.lower()
+            if term_lower in text:
+                exact_matched_terms.add(term_lower)
+                # Base score for finding the term
+                score += 50
+                # Bonus for term frequency (additional occurrences)
+                term_count = text.count(term_lower)
+                if term_count > 1:
+                    score += 5 * (term_count - 1)
+                # Bonus for term appearing early in text (likely more relevant)
+                words = text.split()[:20]
+                if any(term_lower in word for word in words):
+                    score += 10
+
+        # Tier 4: Fuzzy matching (lowest priority - 5 per match)
+        # Handles typos like "ronad" matching "ronald"
+        words_in_text = text.split()
+        for term in terms:
+            term_lower = term.lower()
+            if term_lower not in exact_matched_terms:
+                # Find close matches using difflib
+                close_matches = difflib.get_close_matches(
+                    term_lower,
+                    words_in_text,
+                    n=5,  # Check up to 5 potential matches
+                    cutoff=0.7  # 70% similarity threshold for fuzzy matching
+                )
+                if close_matches:
+                    fuzzy_matched_terms.add(term_lower)
+                    # Award points for each fuzzy match found
+                    score += 5 * len(close_matches)
+
+        # Return score if ANY matches were found (exact or fuzzy)
+        has_any_match = len(exact_matched_terms) > 0 or len(fuzzy_matched_terms) > 0
+        return score if has_any_match else 0
+
+    def _find_term_matches(self, terms: List[str], doc: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Find which terms matched in which fields"""
+        matches = []
+
+        for term in terms:
+            term_lower = term.lower()
+            matched_fields = []
+
+            # Check each field for matches
+            field_checks = [
+                ('filename', doc.get('filename', '')),
+                ('subject', doc.get('subject', '')),
+                ('summary', doc.get('summary', '')),
+                ('sender', doc.get('sender', '')),
+                ('recipient', doc.get('recipient', '')),
+                ('type', doc.get('document_type', '')),
+            ]
+
+            for field_name, field_value in field_checks:
+                if field_value and term_lower in field_value.lower():
+                    matched_fields.append(field_name)
+
+            # Check tags
+            if doc.get('tags'):
+                tag_matches = [tag for tag in doc['tags'] if term_lower in tag.lower()]
+                if tag_matches:
+                    matched_fields.append('tags')
+
+            if matched_fields:
+                matches.append({
+                    'term': term,
+                    'fields': matched_fields
+                })
+
+        return matches
 
     def get_all_metadata(self, limit: int = 1000) -> List[Dict[str, Any]]:
         """
@@ -400,15 +554,41 @@ class PDFScanner:
             if doc.page_count == 0:
                 doc.close()
                 return {}
-                
-            # For multi-page documents, we'll use the first few pages for better analysis
-            pages_to_analyze = min(3, doc.page_count)  # Use up to 3 pages
-            image_data_list = []
             
-            for page_num in range(pages_to_analyze):
+            # Smart page selection for better document coverage:
+            # - Short docs (1-10 pages): scan ALL pages
+            # - Medium docs (11-30 pages): scan first 5, middle, and last 2 (8 pages)
+            # - Long docs (30+ pages): scan first 5, 2 middle pages, and last 2 (9 pages max)
+            total_pages = doc.page_count
+            pages_to_scan = []
+            
+            if total_pages <= 10:
+                # Scan all pages for short documents
+                pages_to_scan = list(range(total_pages))
+            elif total_pages <= 30:
+                # First 5, middle, last 2
+                pages_to_scan = [0, 1, 2, 3, 4]
+                middle = total_pages // 2
+                pages_to_scan.append(middle)
+                pages_to_scan.extend([total_pages - 2, total_pages - 1])
+            else:
+                # First 5, 2 middle spread, last 2
+                pages_to_scan = [0, 1, 2, 3, 4]
+                third = total_pages // 3
+                two_thirds = 2 * total_pages // 3
+                pages_to_scan.extend([third, two_thirds])
+                pages_to_scan.extend([total_pages - 2, total_pages - 1])
+            
+            # Remove duplicates and sort
+            pages_to_scan = sorted(set(pages_to_scan))
+            
+            self.logger.info(f"Scanning {len(pages_to_scan)} of {total_pages} pages for {file_path}")
+            
+            image_data_list = []
+            for page_num in pages_to_scan:
                 page = doc.load_page(page_num)
                 # Higher quality for better text recognition
-                pix = page.get_pixmap(matrix=fitz.Matrix(3, 3))  # 3x zoom for better OCR
+                pix = page.get_pixmap(matrix=fitz.Matrix(2.5, 2.5))  # 2.5x zoom for good quality
                 image_data_list.append(pix.tobytes("png"))
             
             doc.close()
