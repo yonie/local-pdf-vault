@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Scanner - Document Browser</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <header class="header">
+        <div class="logo">
+            <div class="logo-icon">📄</div>
+            <div class="logo-text">PDF <span>Scanner</span></div>
+        </div>
+        <div class="header-actions">
+            <div class="stats">
+                <div class="stat" style="font-size: 12px; color: var(--text-muted);">
+                    <div id="totalDocs">Current index has - total documents</div>
+                </div>
+            </div>
+            <button class="btn btn-primary" onclick="openAdminPanel()">
+                ⚙️ Manage Index
+            </button>
+        </div>
+    </header>
+
+    <div class="main-container" id="mainContainer">
+        <!-- Panel 1: Results List -->
+        <div class="panel" data-panel="sidebar">
+            <aside class="sidebar">
+                <div class="search-container">
+                    <div class="search-box">
+                        <span class="search-icon">🔍</span>
+                        <input type="text" class="search-input" id="searchInput"
+                               placeholder="Search documents..."
+                               autocomplete="off">
+                    </div>
+                    <div class="recent-searches" id="recentSearches" style="display: none;">
+                        <div class="recent-searches-label">Recent searches</div>
+                        <div class="recent-searches-list" id="recentSearchesList"></div>
+                    </div>
+                </div>
+                <div class="filters" id="filters">
+                    <button class="filter-btn active" data-filter="all">All</button>
+                </div>
+                <div class="results-header">
+                    <span class="results-count" id="resultsCount">Loading...</span>
+                </div>
+                <div class="results-list" id="resultsList">
+                    <div class="loading">
+                        <div class="spinner"></div>
+                        <span>Loading...</span>
+                    </div>
+                </div>
+            </aside>
+        </div>
+        <div class="resizer" data-resizer="sidebar"></div>
+
+        <!-- Panel 2: Document Details -->
+        <div class="panel" data-panel="details">
+            <main class="details-panel" id="detailsPanel">
+                <div class="details-empty">
+                    <div class="details-empty-icon">📋</div>
+                    <h3>Document Details</h3>
+                    <p>Select a document from the list to view its metadata</p>
+                </div>
+            </main>
+        </div>
+        <div class="resizer" data-resizer="details"></div>
+
+        <!-- Panel 3: PDF Preview -->
+        <div class="panel" data-panel="preview">
+            <aside class="preview-panel" id="previewPanel">
+                <div class="preview-empty">
+                    <div class="preview-empty-icon">📄</div>
+                    <p>PDF Preview</p>
+                </div>
+            </aside>
+        </div>
+    </div>
+
+    <!-- Admin Panel Modal -->
+    <div class="modal-overlay" id="adminModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>Index Management</h2>
+                <button class="modal-close" onclick="closeAdminPanel()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <!-- Stats Section -->
+                <div class="admin-section">
+                    <h3>📊 Database Statistics</h3>
+                    <div class="stats-grid" id="statsGrid">
+                        <div class="stat-card">
+                            <div class="stat-card-value" id="statTotal">-</div>
+                            <div class="stat-card-label">Total Documents</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-card-value" id="statErrors">-</div>
+                            <div class="stat-card-label">With Errors</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Scan for Files Section -->
+                <div class="admin-section">
+                    <h3>📂 Scan PDF Files</h3>
+                    <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">
+                        Enter a folder path to scan for PDFs. New files will be added to the index.
+                    </p>
+                    <div class="index-form">
+                        <input type="text" id="indexPath" class="index-input"
+                               placeholder="e.g., C:\Documents\PDFs">
+                        <button class="btn btn-primary" onclick="startIndexing()" id="indexBtn">
+                            🔍 Scan
+                        </button>
+                    </div>
+                    <div class="index-progress" id="indexProgress" style="display: none;">
+                        <div class="progress-header">
+                            <span id="progressStatus">Scanning...</span>
+                            <span id="progressCount">0/0</span>
+                            <button class="btn btn-danger btn-sm" onclick="stopIndexing()" id="stopBtn" style="display: none;">Stop</button>
+                        </div>
+                        <div class="progress-bar-container">
+                            <div class="progress-bar" id="progressBar"></div>
+                        </div>
+                        <div class="progress-file" id="progressFile">-</div>
+                    </div>
+                </div>
+
+                <!-- Maintenance Section -->
+                <div class="admin-section">
+                    <h3>🔧 Maintenance</h3>
+                    <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">
+                        Reset the database by re-analyzing all documents with AI. This only updates the search index - your PDF files remain untouched on disk.
+                    </p>
+                    <button class="btn btn-primary" onclick="clearAndRescan()" style="width: 100%;">
+                        🔄 Reset Index (Re-analyze All Files)
+                    </button>
+                </div>
+
+                <!-- Privacy & System Info -->
+                <div class="admin-section privacy-info">
+                    <h3>🔒 Privacy & System Info</h3>
+                    <p>
+                        <strong>Your data stays on your computer.</strong> All document information is stored locally.
+                        AI analysis is performed using the server shown below - verify these settings to confirm where your data is processed.
+                    </p>
+                    <div id="systemConfigInfo">
+                        <div class="config-item">
+                            <span class="config-item-label">📁 Database:</span>
+                            <span class="config-item-value" id="configDbPath">Loading...</span>
+                        </div>
+                        <div class="config-item">
+                            <span class="config-item-label">🖥️ AI Server:</span>
+                            <span class="config-item-value" id="configOllamaUrl">Loading...</span>
+                        </div>
+                        <div class="config-item">
+                            <span class="config-item-label">🤖 AI Model:</span>
+                            <span class="config-item-value" id="configModel">Loading...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
