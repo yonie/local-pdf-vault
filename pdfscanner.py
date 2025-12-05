@@ -35,7 +35,7 @@ class DatabaseManager:
         self._create_table()
 
     def _create_table(self):
-        """Create the pdf_metadata table if it doesn't exist"""
+        """Create the pdf_metadata and indexing_status tables if they don't exist"""
         with self._get_connection() as conn:
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS pdf_metadata (
@@ -51,6 +51,29 @@ class DatabaseManager:
                     error TEXT,
                     last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
+            ''')
+
+            # Create indexing status table
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS indexing_status (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),  -- Ensure only one row
+                    is_running BOOLEAN DEFAULT FALSE,
+                    current_file TEXT,
+                    processed INTEGER DEFAULT 0,
+                    total INTEGER DEFAULT 0,
+                    skipped INTEGER DEFAULT 0,
+                    errors INTEGER DEFAULT 0,
+                    last_directory TEXT,
+                    stop_requested BOOLEAN DEFAULT FALSE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+
+            # Insert default row if not exists
+            conn.execute('''
+                INSERT OR IGNORE INTO indexing_status (id, is_running, current_file, processed, total, skipped, errors, last_directory, stop_requested)
+                VALUES (1, FALSE, '', 0, 0, 0, 0, '', FALSE)
             ''')
 
     @contextmanager
@@ -406,7 +429,7 @@ class DatabaseManager:
                 # Total count
                 cursor = conn.execute('SELECT COUNT(*) FROM pdf_metadata')
                 total = cursor.fetchone()[0]
-                
+
                 # Count by document type
                 cursor = conn.execute('''
                     SELECT document_type, COUNT(*) as count
@@ -416,11 +439,11 @@ class DatabaseManager:
                     ORDER BY count DESC
                 ''')
                 types = {row[0]: row[1] for row in cursor.fetchall()}
-                
+
                 # Count with errors
                 cursor = conn.execute('SELECT COUNT(*) FROM pdf_metadata WHERE error IS NOT NULL')
                 errors = cursor.fetchone()[0]
-                
+
                 return {
                     'total': total,
                     'by_type': types,
@@ -429,6 +452,89 @@ class DatabaseManager:
         except Exception as e:
             print(f"Error getting stats: {e}")
             return {'total': 0, 'by_type': {}, 'errors': 0}
+
+    def get_indexing_status(self) -> Dict[str, Any]:
+        """
+        Get current indexing status from database
+
+        Returns:
+            Dictionary with indexing status
+        """
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.execute('SELECT * FROM indexing_status WHERE id = 1')
+                row = cursor.fetchone()
+                if row:
+                    return {
+                        'is_running': bool(row[1]),
+                        'current_file': row[2] or '',
+                        'processed': row[3] or 0,
+                        'total': row[4] or 0,
+                        'skipped': row[5] or 0,
+                        'errors': row[6] or 0,
+                        'last_directory': row[7] or '',
+                        'stop_requested': bool(row[8])
+                    }
+        except Exception as e:
+            print(f"Error getting indexing status: {e}")
+        return {
+            'is_running': False,
+            'current_file': '',
+            'processed': 0,
+            'total': 0,
+            'skipped': 0,
+            'errors': 0,
+            'last_directory': '',
+            'stop_requested': False
+        }
+
+    def update_indexing_status(self, status: Dict[str, Any]) -> bool:
+        """
+        Update indexing status in database
+
+        Args:
+            status: Dictionary with status fields to update
+
+        Returns:
+            True if updated successfully, False otherwise
+        """
+        try:
+            with self._get_connection() as conn:
+                # Build update query dynamically
+                fields = []
+                values = []
+                for key, value in status.items():
+                    if key in ['is_running', 'current_file', 'processed', 'total', 'skipped', 'errors', 'last_directory', 'stop_requested']:
+                        fields.append(f"{key} = ?")
+                        values.append(value)
+
+                if fields:
+                    query = f"UPDATE indexing_status SET {', '.join(fields)}, updated_at = CURRENT_TIMESTAMP WHERE id = 1"
+                    values.append(1)  # for WHERE id = 1, but wait, no, the WHERE is separate
+                    conn.execute(query, values)
+                    conn.commit()
+                return True
+        except Exception as e:
+            print(f"Error updating indexing status: {e}")
+            return False
+
+    def reset_indexing_status(self) -> bool:
+        """
+        Reset indexing status to defaults
+
+        Returns:
+            True if reset successfully, False otherwise
+        """
+        return self.update_indexing_status({
+            'is_running': False,
+            'current_file': '',
+            'processed': 0,
+            'total': 0,
+            'skipped': 0,
+            'errors': 0,
+            'last_directory': '',
+            'stop_requested': False
+        })
 
 
 

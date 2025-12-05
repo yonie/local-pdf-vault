@@ -13,16 +13,7 @@ from pdfscanner import DatabaseManager, PDFScanner
 app = Flask(__name__)
 db = DatabaseManager()
 
-# Global state for indexing progress
-indexing_state = {
-    'is_running': False,
-    'current_file': '',
-    'processed': 0,
-    'total': 0,
-    'skipped': 0,
-    'errors': 0,
-    'last_directory': ''
-}
+# Thread lock for indexing operations
 indexing_lock = threading.Lock()
 
 HTML_TEMPLATE = """
@@ -145,7 +136,8 @@ HTML_TEMPLATE = """
         }
 
         .panel[data-panel="preview"] {
-            flex: 1;
+            flex: 1 !important;
+            min-width: 300px;
         }
 
         .resizer {
@@ -274,6 +266,8 @@ HTML_TEMPLATE = """
             display: flex;
             gap: 8px;
             flex-wrap: wrap;
+            max-height: 120px;
+            overflow-y: auto;
         }
 
         .filter-btn {
@@ -616,11 +610,7 @@ HTML_TEMPLATE = """
             flex: 1;
             overflow: auto;
             background: #1a1a1a;
-            cursor: grab;
             position: relative;
-            display: flex;
-            align-items: flex-start;
-            justify-content: center;
         }
 
         .pdfjs-canvas.dragging {
@@ -630,9 +620,10 @@ HTML_TEMPLATE = """
 
         .pdfjs-canvas-inner {
             padding: 20px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+            width: 100%;
+            min-width: 100%;
+            box-sizing: border-box;
+            display: inline-block;
         }
 
         .pdfjs-canvas canvas {
@@ -772,6 +763,17 @@ HTML_TEMPLATE = """
             flex-wrap: wrap;
             gap: 6px;
             margin-top: 6px;
+        }
+
+
+        .tag-toggle-btn {
+            background: none;
+            border: none;
+            color: var(--primary);
+            cursor: pointer;
+            font-size: 12px;
+            padding: 0;
+            margin-left: 4px;
         }
 
         .metadata-tag {
@@ -1130,9 +1132,8 @@ HTML_TEMPLATE = """
         </div>
         <div class="header-actions">
             <div class="stats">
-                <div class="stat">
-                    <div class="stat-value" id="totalDocs">-</div>
-                    <div class="stat-label">Documents</div>
+                <div class="stat" style="font-size: 12px; color: var(--text-muted);">
+                    <div id="totalDocs">Current index has - total documents</div>
                 </div>
             </div>
             <button class="btn btn-primary" onclick="openAdminPanel()">
@@ -1217,7 +1218,6 @@ HTML_TEMPLATE = """
                             <div class="stat-card-label">With Errors</div>
                         </div>
                     </div>
-                    <div id="typeBreakdown" class="type-breakdown"></div>
                 </div>
 
                 <!-- Scan for Files Section -->
@@ -1237,6 +1237,7 @@ HTML_TEMPLATE = """
                         <div class="progress-header">
                             <span id="progressStatus">Scanning...</span>
                             <span id="progressCount">0/0</span>
+                            <button class="btn btn-danger btn-sm" onclick="stopIndexing()" id="stopBtn" style="display: none;">Stop</button>
                         </div>
                         <div class="progress-bar-container">
                             <div class="progress-bar" id="progressBar"></div>
@@ -1300,6 +1301,7 @@ HTML_TEMPLATE = """
             setupEventListeners();
             setupResizers();
             setupModalHandlers();
+            loadTotalDocs();
         });
 
         // URL query parameter handling
@@ -1460,8 +1462,7 @@ HTML_TEMPLATE = """
             try {
                 const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
                 allResults = await response.json();
-                
-                document.getElementById('totalDocs').textContent = allResults.length;
+
                 updateFilters();
                 applyFilter();
                 
@@ -1586,17 +1587,6 @@ HTML_TEMPLATE = """
                 document.getElementById('statTotal').textContent = stats.total;
                 document.getElementById('statErrors').textContent = stats.errors;
                 
-                const typeBreakdown = document.getElementById('typeBreakdown');
-                if (Object.keys(stats.by_type).length > 0) {
-                    typeBreakdown.innerHTML = Object.entries(stats.by_type)
-                        .map(([type, count]) => `
-                            <span class="type-badge">
-                                ${escapeHtml(type)}<span class="type-badge-count">${count}</span>
-                            </span>
-                        `).join('');
-                } else {
-                    typeBreakdown.innerHTML = '<span class="type-badge">No documents indexed</span>';
-                }
             } catch (error) {
                 console.error('Error loading stats:', error);
             }
@@ -1606,7 +1596,7 @@ HTML_TEMPLATE = """
             try {
                 const response = await fetch('/api/config');
                 const config = await response.json();
-                
+
                 document.getElementById('configDbPath').textContent = config.database_path || 'Unknown';
                 document.getElementById('configOllamaUrl').textContent = config.ollama_url || 'Unknown';
                 document.getElementById('configModel').textContent = config.model || 'Unknown';
@@ -1616,6 +1606,18 @@ HTML_TEMPLATE = """
                 document.getElementById('configOllamaUrl').textContent = 'Error loading';
                 document.getElementById('configModel').textContent = 'Error loading';
             }
+        }
+
+        function loadTotalDocs() {
+            fetch('/api/stats')
+                .then(response => response.json())
+                .then(stats => {
+                    document.getElementById('totalDocs').textContent = `Current index has ${stats.total} total documents`;
+                })
+                .catch(error => {
+                    console.error('Error loading total docs:', error);
+                    document.getElementById('totalDocs').textContent = 'Current index has - total documents';
+                });
         }
 
         let indexingInterval = null;
@@ -1644,6 +1646,7 @@ HTML_TEMPLATE = """
                     // Save the path to localStorage
                     saveIndexPath(path);
                     document.getElementById('indexProgress').style.display = 'block';
+                    document.getElementById('stopBtn').style.display = 'inline-block';
                     startProgressPolling();
                 } else {
                     alert('Error: ' + result.error);
@@ -1717,18 +1720,35 @@ HTML_TEMPLATE = """
                 alert('No previously scanned folder found. Please enter a folder path first.');
                 return;
             }
-            
+
             if (!confirm(`Refresh the search index for:\\n${savedPath}\\n\\nThis will clear the database and re-analyze all PDFs with fresh AI analysis.\\n\\n⚠️ Your PDF files will NOT be modified or deleted - only the search database will be updated.\\n\\nThis may take a while. Continue?`)) return;
-            
+
             // First clear the index
             try {
                 await fetch('/api/clear', { method: 'DELETE' });
             } catch (error) {
                 console.error('Error clearing index:', error);
             }
-            
+
             // Then start re-indexing
             startReindexing(savedPath);
+        }
+
+        async function stopIndexing() {
+            try {
+                const response = await fetch('/api/index/stop', { method: 'POST' });
+                const result = await response.json();
+
+                if (result.success) {
+                    document.getElementById('stopBtn').disabled = true;
+                    document.getElementById('stopBtn').innerHTML = 'Stopping...';
+                    alert('Stop signal sent. The indexing process will stop gracefully.');
+                } else {
+                    alert('Error: ' + result.error);
+                }
+            } catch (error) {
+                alert('Error stopping indexing: ' + error);
+            }
         }
 
         function startProgressPolling() {
@@ -1753,6 +1773,9 @@ HTML_TEMPLATE = """
                         indexingInterval = null;
                         document.getElementById('indexBtn').disabled = false;
                         document.getElementById('indexBtn').innerHTML = '🔍 Scan Folder';
+                        document.getElementById('stopBtn').style.display = 'none';
+                        document.getElementById('stopBtn').disabled = false;
+                        document.getElementById('stopBtn').innerHTML = 'Stop';
                         loadStats();
                         loadDocuments();
                     }
@@ -1951,6 +1974,7 @@ HTML_TEMPLATE = """
             return div.innerHTML;
         }
 
+
         // PDF.js Viewer Class with drag-to-pan support
         class PDFViewer {
             constructor(hash) {
@@ -1981,41 +2005,7 @@ HTML_TEMPLATE = """
             setupDragToPan() {
                 const container = this.canvas;
                 
-                container.addEventListener('mousedown', (e) => {
-                    // Only on left click and not on buttons
-                    if (e.button !== 0 || e.target.tagName === 'BUTTON') return;
-                    
-                    this.isDragging = true;
-                    container.classList.add('dragging');
-                    this.startX = e.pageX - container.offsetLeft;
-                    this.startY = e.pageY - container.offsetTop;
-                    this.scrollLeft = container.scrollLeft;
-                    this.scrollTop = container.scrollTop;
-                    e.preventDefault();
-                });
-
-                container.addEventListener('mouseleave', () => {
-                    this.isDragging = false;
-                    container.classList.remove('dragging');
-                });
-
-                container.addEventListener('mouseup', () => {
-                    this.isDragging = false;
-                    container.classList.remove('dragging');
-                });
-
-                container.addEventListener('mousemove', (e) => {
-                    if (!this.isDragging) return;
-                    e.preventDefault();
-                    const x = e.pageX - container.offsetLeft;
-                    const y = e.pageY - container.offsetTop;
-                    const walkX = (x - this.startX) * 1.5; // Scroll speed multiplier
-                    const walkY = (y - this.startY) * 1.5;
-                    container.scrollLeft = this.scrollLeft - walkX;
-                    container.scrollTop = this.scrollTop - walkY;
-                });
-
-                // Mouse wheel zoom
+                // Mouse wheel zoom only (Ctrl+Scroll)
                 container.addEventListener('wheel', (e) => {
                     if (e.ctrlKey) {
                         e.preventDefault();
@@ -2025,6 +2015,7 @@ HTML_TEMPLATE = """
                             this.zoomOut();
                         }
                     }
+                    // Normal wheel scrolling works automatically via overflow: auto
                 }, { passive: false });
             }
 
@@ -2077,7 +2068,12 @@ HTML_TEMPLATE = """
                     canvas.height = viewport.height;
                     canvas.width = viewport.width;
                     canvas.className = 'pdfjs-page';
-
+                    canvas.style.display = 'block';
+                    canvas.style.margin = '0 auto';
+                    canvas.style.maxWidth = '100%';
+                    canvas.style.height = 'auto';
+                    canvas.style.boxShadow = '0 4px 20px rgba(0, 0, 0, 0.5)';
+        
                     // Clear previous content but keep the inner container
                     this.canvasInner.innerHTML = '';
 
@@ -2144,7 +2140,7 @@ HTML_TEMPLATE = """
                 if (!this.pdfDoc) return;
                 this.pdfDoc.getPage(this.pageNum).then((page) => {
                     const viewport = page.getViewport({ scale: 1 });
-                    const containerWidth = this.canvas.clientWidth - 40; // padding
+                    const containerWidth = this.canvasInner.clientWidth - 40; // padding
                     this.scale = containerWidth / viewport.width;
                     this.queueRenderPage(this.pageNum);
                 });
@@ -2213,10 +2209,11 @@ HTML_TEMPLATE = """
         }
 
         function saveLayoutPreferences() {
-            // Save panel sizes
+            // Save panel sizes, but never save the preview panel size
             const panels = document.querySelectorAll('.panel');
             panels.forEach(panel => {
                 const panelType = panel.dataset.panel;
+                if (panelType === 'preview') return; // Don't save preview panel size
                 const width = panel.offsetWidth;
                 panelSizes[panelType] = width;
             });
@@ -2234,8 +2231,9 @@ HTML_TEMPLATE = """
                 }
             }
 
-            // Apply saved sizes
+            // Apply saved sizes, but never to the preview panel which should always be flexible
             Object.entries(panelSizes).forEach(([panelType, size]) => {
+                if (panelType === 'preview') return; // Skip preview panel
                 const panel = document.querySelector(`[data-panel="${panelType}"]`);
                 if (panel) {
                     panel.style.flex = `0 0 ${size}px`;
@@ -2307,26 +2305,26 @@ def clear_database():
 
 @app.route('/api/index', methods=['POST'])
 def start_indexing():
-    global indexing_state
-    
     data = request.get_json()
     path = data.get('path', '')
     force = data.get('force', False)  # Force re-indexing even if already indexed
-    
+
     if not path:
         return jsonify({'success': False, 'error': 'No path provided'})
-    
+
     if not os.path.exists(path):
         return jsonify({'success': False, 'error': 'Directory does not exist'})
-    
+
     if not os.path.isdir(path):
         return jsonify({'success': False, 'error': 'Path is not a directory'})
-    
+
     with indexing_lock:
-        if indexing_state['is_running']:
+        current_status = db.get_indexing_status()
+        if current_status['is_running']:
             return jsonify({'success': False, 'error': 'Indexing already in progress'})
-        
-        indexing_state = {
+
+        # Reset status and start new indexing
+        db.update_indexing_status({
             'is_running': True,
             'current_file': '',
             'processed': 0,
@@ -2334,19 +2332,31 @@ def start_indexing():
             'skipped': 0,
             'errors': 0,
             'last_directory': path,
-            'force_reindex': force
-        }
-    
+            'stop_requested': False
+        })
+
     # Start indexing in background thread
     thread = threading.Thread(target=run_indexing, args=(path, force))
     thread.daemon = True
     thread.start()
-    
+
     return jsonify({'success': True})
 
 @app.route('/api/index/status')
 def indexing_status():
-    return jsonify(indexing_state)
+    return jsonify(db.get_indexing_status())
+
+@app.route('/api/index/stop', methods=['POST'])
+def stop_indexing():
+    with indexing_lock:
+        current_status = db.get_indexing_status()
+        if not current_status['is_running']:
+            return jsonify({'success': False, 'error': 'No indexing in progress'})
+
+        # Set stop flag
+        db.update_indexing_status({'stop_requested': True})
+
+    return jsonify({'success': True, 'message': 'Stop signal sent to indexing process'})
 
 @app.route('/api/reindex/<file_hash>', methods=['POST'])
 def reindex_document(file_hash):
@@ -2370,67 +2380,109 @@ def reindex_document(file_hash):
     return jsonify({'success': True})
 
 def run_indexing(directory, force_reindex=False):
-    global indexing_state
-    
     try:
         scanner = PDFScanner()
-        
+
         # Test Ollama connection
         if not scanner.test_ollama_connection():
             with indexing_lock:
-                indexing_state['is_running'] = False
-                indexing_state['errors'] = 1
+                db.update_indexing_status({
+                    'is_running': False,
+                    'errors': 1
+                })
             return
-        
+
         # Find all PDFs
         pdf_files = scanner.scan_directory(directory)
-        
+        total_files = len(pdf_files)
+
         with indexing_lock:
-            indexing_state['total'] = len(pdf_files)
-        
-        for pdf_file in pdf_files:
+            db.update_indexing_status({
+                'total': total_files
+            })
+
+        print(f"Starting indexing of {total_files} PDF files from {directory}")
+
+        for i, pdf_file in enumerate(pdf_files, 1):
+            # Check for stop request
             with indexing_lock:
-                indexing_state['current_file'] = os.path.basename(pdf_file)
-            
+                current_status = db.get_indexing_status()
+                if current_status['stop_requested']:
+                    print("Indexing stopped by user request")
+                    db.update_indexing_status({
+                        'is_running': False,
+                        'current_file': '',
+                        'stop_requested': False
+                    })
+                    return
+
+            filename = os.path.basename(pdf_file)
+            print(f"Processing file {i} of {total_files}: {filename}")
+
+            with indexing_lock:
+                db.update_indexing_status({
+                    'current_file': filename
+                })
+
             # Generate hash
             file_hash = scanner.generate_file_hash(pdf_file)
             if not file_hash:
+                print(f"Failed to generate hash for {filename}")
                 with indexing_lock:
-                    indexing_state['errors'] += 1
-                    indexing_state['processed'] += 1
+                    db.update_indexing_status({
+                        'errors': current_status['errors'] + 1,
+                        'processed': current_status['processed'] + 1
+                    })
                 continue
-            
+
             # Check if already exists (skip if not force re-indexing)
             existing = db.get_metadata(file_hash)
             if existing and not force_reindex:
+                print(f"Skipping {filename} - already processed")
                 with indexing_lock:
-                    indexing_state['skipped'] += 1
-                    indexing_state['processed'] += 1
+                    db.update_indexing_status({
+                        'skipped': current_status['skipped'] + 1,
+                        'processed': current_status['processed'] + 1
+                    })
                 continue
-            
+
             # If force re-indexing, delete existing entry first
             if existing and force_reindex:
                 db.delete_metadata(file_hash)
-            
+
             # Process
             result = scanner.process_pdf(pdf_file)
             if db.store_metadata(result):
                 if result.get('error'):
+                    print(f"Processed {filename} with error: {result.get('error')}")
                     with indexing_lock:
-                        indexing_state['errors'] += 1
+                        db.update_indexing_status({
+                            'errors': current_status['errors'] + 1
+                        })
+                else:
+                    print(f"Successfully processed {filename}")
             else:
+                print(f"Failed to store metadata for {filename}")
                 with indexing_lock:
-                    indexing_state['errors'] += 1
-            
+                    db.update_indexing_status({
+                        'errors': current_status['errors'] + 1
+                    })
+
             with indexing_lock:
-                indexing_state['processed'] += 1
-        
+                db.update_indexing_status({
+                    'processed': current_status['processed'] + 1
+                })
+
+        print(f"Indexing completed: {db.get_indexing_status()['processed']} processed, {db.get_indexing_status()['skipped']} skipped, {db.get_indexing_status()['errors']} errors")
+
     except Exception as e:
         print(f"Indexing error: {e}")
     finally:
         with indexing_lock:
-            indexing_state['is_running'] = False
-            indexing_state['current_file'] = ''
+            db.update_indexing_status({
+                'is_running': False,
+                'current_file': ''
+            })
 
 def reindex_single(filename):
     try:
