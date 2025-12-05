@@ -25,36 +25,33 @@ except ImportError:
     print("Error: requests library not found. Install with: pip install requests")
     sys.exit(1)
 
-try:
-    import pdfplumber
-except ImportError:
-    print("Error: pdfplumber library not found. Install with: pip install pdfplumber")
-    sys.exit(1)
 
 
 class PDFScanner:
     """Main PDF Scanner class with Ollama integration"""
     
-    def __init__(self, host: str = "localhost", port: int = 11434, model: str = "qwen3-vl:30b-a3b-instruct-q4_K_M"):
+    def __init__(self, host: str = "localhost", port: int = 11434, model: str = "qwen3-vl:30b-a3b-instruct-q4_K_M", verbose: bool = False):
         """
         Initialize the PDF Scanner
-        
+
         Args:
             host: Ollama server host
             port: Ollama server port
             model: Ollama model name
+            verbose: Enable verbose logging
         """
         self.host = host
         self.port = port
         self.model = model
         self.base_url = f"http://{host}:{port}"
-        self.logger = self._setup_logging()
+        self.logger = self._setup_logging(verbose)
         
-    def _setup_logging(self) -> logging.Logger:
+    def _setup_logging(self, verbose: bool = False) -> logging.Logger:
         """Setup logging configuration"""
         logger = logging.getLogger('pdfscanner')
-        logger.setLevel(logging.INFO)
-        
+        level = logging.DEBUG if verbose else logging.INFO
+        logger.setLevel(level)
+
         if not logger.handlers:
             handler = logging.StreamHandler()
             formatter = logging.Formatter(
@@ -62,7 +59,7 @@ class PDFScanner:
             )
             handler.setFormatter(formatter)
             logger.addHandler(handler)
-            
+
         return logger
     
     def test_ollama_connection(self) -> bool:
@@ -99,27 +96,6 @@ class PDFScanner:
             self.logger.error(f"Failed to generate hash for {file_path}: {e}")
             return ""
     
-    def extract_pdf_text(self, file_path: str) -> str:
-        """
-        Extract text content from PDF file
-        
-        Args:
-            file_path: Path to the PDF file
-            
-        Returns:
-            Extracted text content
-        """
-        try:
-            text_content = ""
-            with pdfplumber.open(file_path) as pdf:
-                for page in pdf.pages:
-                    page_text = page.extract_text()
-                    if page_text:
-                        text_content += page_text + "\n"
-            return text_content.strip()
-        except Exception as e:
-            self.logger.error(f"Failed to extract text from {file_path}: {e}")
-            return ""
     
     def extract_pdf_metadata(self, file_path: str) -> Dict[str, Any]:
         """
@@ -392,18 +368,6 @@ class PDFScanner:
         # Log final summary
         self.logger.info(f"Processing complete: {success_count} successful, {error_count} errors")
     
-    def output_results(self, results: List[Dict[str, Any]]) -> None:
-        """
-        Output results as JSON to console
-        
-        Args:
-            results: List of processing results
-        """
-        try:
-            json_output = json.dumps(results, indent=2, ensure_ascii=False)
-            print(json_output)
-        except Exception as e:
-            self.logger.error(f"Failed to output JSON results: {e}")
 
 
 def main():
@@ -451,22 +415,18 @@ Examples:
     )
     
     args = parser.parse_args()
-    
-    # Setup logging level
-    if args.verbose:
-        logging.getLogger('pdfscanner').setLevel(logging.DEBUG)
-    
+
     # Validate directory
     if not os.path.exists(args.directory):
         print(f"Error: Directory '{args.directory}' does not exist")
         sys.exit(1)
-    
+
     if not os.path.isdir(args.directory):
         print(f"Error: '{args.directory}' is not a directory")
         sys.exit(1)
-    
+
     # Create scanner instance
-    scanner = PDFScanner(host=args.host, port=args.port, model=args.model)
+    scanner = PDFScanner(host=args.host, port=args.port, model=args.model, verbose=args.verbose)
     
     try:
         # Scan and process PDFs (results are output immediately after each file)

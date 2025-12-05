@@ -1,6 +1,6 @@
 # PDF Scanner with Ollama Integration
 
-A comprehensive PDF scanning application that recursively scans directories for PDF files, extracts metadata using local Ollama vision models, and outputs structured JSON data.
+A command-line tool that recursively scans directories for PDF files and uses local Ollama vision models to analyze document content by converting PDF pages to images. Extracts structured metadata including subject, summary, dates, sender/recipient information, document type, and automatically generated categorization tags. Outputs clean JSON data for easy integration with other systems.
 
 ## Features
 
@@ -9,7 +9,7 @@ A comprehensive PDF scanning application that recursively scans directories for 
 - **Model Configuration**: Default to qwen3-vl:30b-a3b-instruct-q4_K_M but fully configurable
 - **File Processing**: Generate SHA-256 hash and extract text content from PDFs
 - **Vision Analysis**: Use Ollama vision models to analyze PDFs and extract metadata
-- **Metadata Extraction**: Extract filename, file hash, subject, summary, date, sender, recipient, and document type
+- **Metadata Extraction**: Extract filename, file hash, subject, summary, date, sender, recipient, document type, and categorization tags
 - **JSON Output**: Clean, valid JSON output to console
 - **Robust Error Handling**: Gracefully handle corrupted PDFs, API failures, and other edge cases
 - **Comprehensive Logging**: Track progress and issues with detailed logging
@@ -74,6 +74,7 @@ python pdfscanner.py --directory /path/to/pdfs --verbose
     "sender": "Finance Department",
     "recipient": "Executive Committee",
     "document_type": "report",
+    "tags": ["finance", "quarterly", "report", "revenue", "q3"],
     "error": null
   },
   {
@@ -85,6 +86,7 @@ python pdfscanner.py --directory /path/to/pdfs --verbose
     "sender": "ABC Consulting LLC",
     "recipient": "XYZ Corporation",
     "document_type": "invoice",
+    "tags": ["invoice", "consulting", "services", "payment"],
     "error": null
   }
 ]
@@ -93,7 +95,6 @@ python pdfscanner.py --directory /path/to/pdfs --verbose
 ## Dependencies
 
 - `requests>=2.31.0`: HTTP library for Ollama API calls
-- `pdfplumber>=0.9.0`: PDF text extraction
 - `PyPDF2>=3.0.1`: PDF metadata extraction
 - `pymupdf>=1.23.8`: PDF to image conversion for vision analysis
 
@@ -118,10 +119,9 @@ The application follows a modular architecture:
 1. **PDFScanner Class**: Main orchestrator that handles the entire workflow
 2. **Directory Scanning**: Recursive scanning using `os.walk()`
 3. **File Hashing**: SHA-256 hash generation for file integrity
-4. **Text Extraction**: Using pdfplumber for robust text extraction
-5. **Metadata Extraction**: Using PyPDF2 for PDF metadata and Ollama for advanced analysis
-6. **Vision Analysis**: Converting PDF pages to images and using Ollama vision models
-7. **JSON Output**: Clean JSON serialization with proper formatting
+4. **Metadata Extraction**: Using PyPDF2 for PDF metadata and Ollama for advanced analysis
+5. **Vision Analysis**: Converting individual PDF pages to high-quality PNG images for Ollama vision model analysis
+6. **JSON Output**: Clean JSON serialization with proper formatting
 
 ### Ollama Integration
 
@@ -165,15 +165,15 @@ The application connects to Ollama's REST API:
 Enable verbose logging with `--verbose` flag to see detailed processing information:
 
 ```
-2024-12-05 08:00:01 - pdfscanner - INFO - Starting PDF scan of directory: /path/to/pdfs
-2024-12-05 08:00:02 - pdfscanner - INFO - Found 5 PDF files in /path/to/pdfs
-2024-12-05 08:00:03 - pdfscanner - INFO - Successfully connected to Ollama at http://localhost:11434
-2024-12-05 08:00:04 - pdfscanner - INFO - Processing: /path/to/pdfs/document1.pdf
+2025-12-05 08:00:01 - pdfscanner - INFO - Starting PDF scan of directory: /path/to/pdfs
+2025-12-05 08:00:02 - pdfscanner - INFO - Found 5 PDF files in /path/to/pdfs
+2025-12-05 08:00:03 - pdfscanner - INFO - Successfully connected to Ollama at http://localhost:11434
+2025-12-05 08:00:04 - pdfscanner - INFO - Processing: /path/to/pdfs/document1.pdf
 ```
 
 ## License
 
-This application is created for educational and practical use. Feel free to modify and distribute according to your needs.
+MIT License - see LICENSE file for details, or feel free to use this code for educational and practical purposes with attribution.
 
 ## Author
 
