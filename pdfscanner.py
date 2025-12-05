@@ -183,7 +183,7 @@ class PDFScanner:
             
             doc.close()
             
-            # Enhanced prompt for comprehensive metadata extraction
+            # Enhanced prompt for comprehensive metadata extraction with tags
             prompt = f"""Analyze this PDF document and extract metadata in JSON format. 
             
             Document: {os.path.basename(file_path)}
@@ -196,9 +196,11 @@ class PDFScanner:
             - sender: "sender/from information (person, company, or organization)"
             - recipient: "recipient/to information (person, company, or organization)"
             - document_type: "type of document (invoice, contract, letter, report, deed, legal document, etc.)"
+            - tags: ["relevant", "categorization", "keywords", "for", "this", "document"]
             
             Look for dates, names, addresses, official seals, document types, and any other identifying information.
             Use your vision capabilities to read and understand the document content.
+            Suggest helpful tags that would categorize this document for easy searching and organization.
             
             Respond with only valid JSON, no additional text."""
             
@@ -239,10 +241,13 @@ class PDFScanner:
                         if json_match:
                             metadata = json.loads(json_match.group())
                             # Ensure all required fields exist
-                            required_fields = ["filename", "subject", "summary", "date", "sender", "recipient", "document_type"]
+                            required_fields = ["filename", "subject", "summary", "date", "sender", "recipient", "document_type", "tags"]
                             for field in required_fields:
                                 if field not in metadata:
-                                    metadata[field] = ""
+                                    if field == "tags":
+                                        metadata[field] = []
+                                    else:
+                                        metadata[field] = ""
                             return metadata
                         else:
                             self.logger.warning("No JSON found in Ollama response")
@@ -304,6 +309,7 @@ class PDFScanner:
             "sender": "",
             "recipient": "",
             "document_type": "",
+            "tags": [],
             "error": None
         }
         
@@ -325,7 +331,8 @@ class PDFScanner:
                     "date": ollama_metadata.get("date", ""),
                     "sender": ollama_metadata.get("sender", ""),
                     "recipient": ollama_metadata.get("recipient", ""),
-                    "document_type": ollama_metadata.get("document_type", "")
+                    "document_type": ollama_metadata.get("document_type", ""),
+                    "tags": ollama_metadata.get("tags", [])
                 })
                 self.logger.info(f"Successfully processed: {file_path}")
                 # Output complete result immediately after processing
