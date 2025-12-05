@@ -18,6 +18,9 @@
                 <div class="stat" style="font-size: 12px; color: var(--text-muted);">
                     <div id="totalDocs">Current index has - total documents</div>
                 </div>
+                <div class="stat" style="font-size: 12px; color: var(--text-muted); margin-left: 20px;">
+                    <div id="ollamaStatus">Ollama: <span style="color: var(--text-muted);">checking...</span></div>
+                </div>
             </div>
             <button class="btn btn-primary" onclick="openAdminPanel()">
                 ⚙️ Manage Index
@@ -135,7 +138,7 @@
                     <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">
                         Reset the database by re-analyzing all documents with AI. This only updates the search index - your PDF files remain untouched on disk.
                     </p>
-                    <button class="btn btn-primary" onclick="clearAndRescan()" style="width: 100%;">
+                    <button class="btn btn-secondary" onclick="clearAndRescan()" style="width: 100%;">
                         🔄 Reset Index (Re-analyze All Files)
                     </button>
                 </div>

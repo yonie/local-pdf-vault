@@ -75,6 +75,7 @@ class DatabaseManager:
                 INSERT OR IGNORE INTO indexing_status (id, is_running, current_file, processed, total, skipped, errors, last_directory, stop_requested)
                 VALUES (1, FALSE, '', 0, 0, 0, 0, '', FALSE)
             ''')
+            conn.commit()
 
     @contextmanager
     def _get_connection(self):
@@ -82,6 +83,10 @@ class DatabaseManager:
         conn = sqlite3.connect(self.db_path)
         try:
             yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
         finally:
             conn.close()
 
@@ -113,7 +118,6 @@ class DatabaseManager:
                     json.dumps(metadata.get('tags', [])),
                     metadata.get('error')
                 ))
-                conn.commit()
             return True
         except Exception as e:
             print(f"Error storing metadata: {e}")
@@ -395,7 +399,6 @@ class DatabaseManager:
         try:
             with self._get_connection() as conn:
                 conn.execute('DELETE FROM pdf_metadata WHERE file_hash = ?', (file_hash,))
-                conn.commit()
             return True
         except Exception as e:
             print(f"Error deleting metadata: {e}")
@@ -411,7 +414,6 @@ class DatabaseManager:
         try:
             with self._get_connection() as conn:
                 conn.execute('DELETE FROM pdf_metadata')
-                conn.commit()
             return True
         except Exception as e:
             print(f"Error deleting all metadata: {e}")
@@ -511,7 +513,6 @@ class DatabaseManager:
                 if fields:
                     query = f"UPDATE indexing_status SET {', '.join(fields)}, updated_at = CURRENT_TIMESTAMP WHERE id = 1"
                     conn.execute(query, values)
-                    conn.commit()
                 return True
         except Exception as e:
             print(f"Error updating indexing status: {e}")

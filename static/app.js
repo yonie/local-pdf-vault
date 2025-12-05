@@ -7,6 +7,9 @@ let currentSearchQuery = '';  // Track if we have an active search
 // Layout Management
 let panelSizes = {};
 
+// Periodic status polling
+let statusPollingInterval = null;
+
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
     loadLayoutPreferences();
@@ -15,7 +18,8 @@ document.addEventListener('DOMContentLoaded', () => {
     setupEventListeners();
     setupResizers();
     setupModalHandlers();
-    loadTotalDocs();
+    // Don't call loadTotalDocs() here - startStatusPolling() will do it immediately
+    startStatusPolling(); // Start periodic status checking (every 5 seconds)
 });
 
 // URL query parameter handling
@@ -341,16 +345,120 @@ async function loadSystemConfig() {
     }
 }
 
-function loadTotalDocs() {
-    fetch('/api/stats')
-        .then(response => response.json())
-        .then(stats => {
-            document.getElementById('totalDocs').textContent = `Current index has ${stats.total} total documents`;
-        })
-        .catch(error => {
-            console.error('Error loading total docs:', error);
-            document.getElementById('totalDocs').textContent = 'Current index has - total documents';
-        });
+async function loadTotalDocs(statusData = null) {
+    try {
+        // If status data is provided, use it; otherwise fetch both
+        const [stats, status] = statusData
+            ? [await fetch('/api/stats').then(r => r.json()), statusData]
+            : await Promise.all([
+                fetch('/api/stats').then(r => r.json()),
+                fetch('/api/index/status').then(r => r.json())
+            ]);
+        
+        const totalDocsEl = document.getElementById('totalDocs');
+        if (status.is_running) {
+            totalDocsEl.textContent = `Currently indexing... (${stats.total} documents indexed so far)`;
+            totalDocsEl.style.color = 'var(--primary)';
+            totalDocsEl.style.fontWeight = '500';
+        } else {
+            totalDocsEl.textContent = `Current index has ${stats.total} total documents`;
+            totalDocsEl.style.color = '';
+            totalDocsEl.style.fontWeight = '';
+        }
+    } catch (error) {
+        console.error('Error loading total docs:', error);
+        document.getElementById('totalDocs').textContent = 'Current index has - total documents';
+    }
+}
+
+function startStatusPolling() {
+    // Clear any existing interval
+    if (statusPollingInterval) {
+        clearInterval(statusPollingInterval);
+    }
+    
+    // Check status immediately
+    checkIndexingStatus();
+    checkOllamaStatus();
+    
+    // Then check every 5 seconds
+    statusPollingInterval = setInterval(() => {
+        checkIndexingStatus();
+        checkOllamaStatus();
+    }, 5000);
+}
+
+async function checkIndexingStatus() {
+    try {
+        const response = await fetch('/api/index/status');
+        const status = await response.json();
+        
+        // Update the total docs display with the status we just fetched
+        await loadTotalDocs(status);
+        
+        if (status.is_running) {
+            // Indexing is in progress - show progress UI if not already shown
+            if (document.getElementById('indexProgress').style.display !== 'block') {
+                document.getElementById('indexProgress').style.display = 'block';
+                document.getElementById('stopBtn').style.display = 'inline-block';
+                document.getElementById('indexBtn').disabled = true;
+                document.getElementById('indexBtn').innerHTML = '⏳ Scanning...';
+            }
+            
+            // Update progress details
+            document.getElementById('progressStatus').textContent = 'Indexing...';
+            document.getElementById('progressCount').textContent =
+                `${status.processed}/${status.total} (${status.skipped} skipped, ${status.errors} errors)`;
+            
+            const pct = status.total > 0 ? (status.processed / status.total * 100) : 0;
+            document.getElementById('progressBar').style.width = pct + '%';
+            document.getElementById('progressFile').textContent = status.current_file || '-';
+            
+        } else {
+            // Indexing is not running - hide progress UI if shown
+            if (document.getElementById('indexProgress').style.display === 'block') {
+                document.getElementById('indexProgress').style.display = 'none';
+                document.getElementById('stopBtn').style.display = 'none';
+                document.getElementById('indexBtn').disabled = false;
+                document.getElementById('indexBtn').innerHTML = '🔍 Scan Folder';
+                document.getElementById('stopBtn').disabled = false;
+                document.getElementById('stopBtn').innerHTML = 'Stop';
+                
+                // Reload data when indexing completes
+                loadStats();
+                loadDocuments();
+            }
+        }
+    } catch (error) {
+        console.error('Error checking indexing status:', error);
+    }
+}
+
+async function checkOllamaStatus() {
+    try {
+        const response = await fetch('/api/ollama/status');
+        const status = await response.json();
+        const statusEl = document.getElementById('ollamaStatus');
+        
+        if (status.status === 'running') {
+            if (status.model_available) {
+                statusEl.innerHTML = `Ollama: <span style="color: #22c55e; font-weight: 500;">● Ready</span>`;
+                statusEl.title = `Connected to ${status.url}\nModel: ${status.model} (available)`;
+            } else {
+                statusEl.innerHTML = `Ollama: <span style="color: #f59e0b; font-weight: 500;">● Model Missing</span>`;
+                statusEl.title = `Connected to ${status.url}\nRequired model not found: ${status.model}`;
+            }
+        } else if (status.status === 'offline') {
+            statusEl.innerHTML = `Ollama: <span style="color: #ef4444; font-weight: 500;">● Offline</span>`;
+            statusEl.title = `Cannot connect to ${status.url}\nRequired model: ${status.model}`;
+        } else {
+            statusEl.innerHTML = `Ollama: <span style="color: #f59e0b; font-weight: 500;">● Error</span>`;
+            statusEl.title = `Error: ${status.error}\nRequired model: ${status.model}`;
+        }
+    } catch (error) {
+        console.error('Error checking Ollama status:', error);
+        document.getElementById('ollamaStatus').innerHTML = `Ollama: <span style="color: var(--text-muted);">unknown</span>`;
+    }
 }
 
 let indexingInterval = null;
@@ -378,9 +486,8 @@ async function startIndexing() {
         if (result.success) {
             // Save the path to localStorage
             saveIndexPath(path);
-            document.getElementById('indexProgress').style.display = 'block';
-            document.getElementById('stopBtn').style.display = 'inline-block';
-            startProgressPolling();
+            // Immediately check status to show progress UI
+            await checkIndexingStatus();
         } else {
             alert('Error: ' + result.error);
             btn.disabled = false;
@@ -414,8 +521,8 @@ async function startReindexing(path) {
         
         if (result.success) {
             saveIndexPath(path);
-            document.getElementById('indexProgress').style.display = 'block';
-            startProgressPolling();
+            // Immediately check status to show progress UI
+            await checkIndexingStatus();
         } else {
             alert('Error: ' + result.error);
             btn.disabled = false;
@@ -485,38 +592,10 @@ async function stopIndexing() {
     }
 }
 
+// This function is no longer needed - status polling handles everything
+// Keeping it as a no-op for backwards compatibility
 function startProgressPolling() {
-    if (indexingInterval) clearInterval(indexingInterval);
-    
-    indexingInterval = setInterval(async () => {
-        try {
-            const response = await fetch('/api/index/status');
-            const status = await response.json();
-            
-            document.getElementById('progressStatus').textContent =
-                status.is_running ? 'Indexing...' : 'Complete';
-            document.getElementById('progressCount').textContent =
-                `${status.processed}/${status.total} (${status.skipped} skipped, ${status.errors} errors)`;
-            
-            const pct = status.total > 0 ? (status.processed / status.total * 100) : 0;
-            document.getElementById('progressBar').style.width = pct + '%';
-            document.getElementById('progressFile').textContent = status.current_file || '-';
-
-            if (!status.is_running) {
-                clearInterval(indexingInterval);
-                indexingInterval = null;
-                document.getElementById('indexBtn').disabled = false;
-                document.getElementById('indexBtn').innerHTML = '🔍 Scan Folder';
-                document.getElementById('stopBtn').style.display = 'none';
-                document.getElementById('stopBtn').disabled = false;
-                document.getElementById('stopBtn').innerHTML = 'Stop';
-                loadStats();
-                loadDocuments();
-            }
-        } catch (error) {
-            console.error('Error polling status:', error);
-        }
-    }, 500);
+    // Status polling now happens automatically every 5 seconds via startStatusPolling()
 }
 
 async function deleteDocument(hash) {

@@ -63,6 +63,55 @@ def get_config():
         'model': ollama_model
     })
 
+@app.route('/api/ollama/status')
+def ollama_status():
+    """Check Ollama service status and verify configured model is available"""
+    try:
+        import requests
+        ollama_host = "localhost"
+        ollama_port = 11434
+        configured_model = "qwen3-vl:30b-a3b-instruct-q4_K_M"
+        base_url = f"http://{ollama_host}:{ollama_port}"
+        
+        # Try to get tags (available models)
+        response = requests.get(f"{base_url}/api/tags", timeout=2)
+        
+        if response.status_code == 200:
+            data = response.json()
+            models = data.get('models', [])
+            model_names = [m.get('name', '') for m in models]
+            
+            # Check if configured model is available
+            model_available = configured_model in model_names
+            
+            return jsonify({
+                'status': 'running',
+                'url': base_url,
+                'model': configured_model,
+                'model_available': model_available
+            })
+        else:
+            return jsonify({
+                'status': 'error',
+                'url': base_url,
+                'model': configured_model,
+                'error': f'HTTP {response.status_code}'
+            })
+    except requests.exceptions.ConnectionError:
+        return jsonify({
+            'status': 'offline',
+            'url': f"http://{ollama_host}:{ollama_port}",
+            'model': "qwen3-vl:30b-a3b-instruct-q4_K_M",
+            'error': 'Connection refused'
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'url': f"http://{ollama_host}:{ollama_port}",
+            'model': "qwen3-vl:30b-a3b-instruct-q4_K_M",
+            'error': str(e)
+        })
+
 @app.route('/api/delete/<file_hash>', methods=['DELETE'])
 def delete_document(file_hash):
     success = db.delete_metadata(file_hash)
@@ -174,7 +223,7 @@ def run_indexing(directory, force_reindex=False):
         print(f"Starting indexing of {total_files} PDF files from {directory}")
 
         for i, pdf_file in enumerate(pdf_files, 1):
-            # Check for stop request
+            # Check for stop request - fetch fresh status each time
             with indexing_lock:
                 current_status = db.get_indexing_status()
                 if current_status['stop_requested']:
@@ -199,6 +248,8 @@ def run_indexing(directory, force_reindex=False):
             if not file_hash:
                 print(f"Failed to generate hash for {filename}")
                 with indexing_lock:
+                    # Fetch fresh status before incrementing
+                    current_status = db.get_indexing_status()
                     db.update_indexing_status({
                         'errors': current_status['errors'] + 1,
                         'processed': current_status['processed'] + 1
@@ -210,6 +261,8 @@ def run_indexing(directory, force_reindex=False):
             if existing and not force_reindex:
                 print(f"Skipping {filename} - already processed")
                 with indexing_lock:
+                    # Fetch fresh status before incrementing
+                    current_status = db.get_indexing_status()
                     db.update_indexing_status({
                         'skipped': current_status['skipped'] + 1,
                         'processed': current_status['processed'] + 1
@@ -230,6 +283,8 @@ def run_indexing(directory, force_reindex=False):
                 else:
                     print(f"Failed to store metadata for {filename}")
                     with indexing_lock:
+                        # Fetch fresh status before incrementing
+                        current_status = db.get_indexing_status()
                         db.update_indexing_status({
                             'errors': current_status['errors'] + 1
                         })
@@ -237,11 +292,16 @@ def run_indexing(directory, force_reindex=False):
                 # Vision analysis failed - do not store, count as error for retry later
                 print(f"Vision analysis failed for {filename} - not indexed: {result.get('error')}")
                 with indexing_lock:
+                    # Fetch fresh status before incrementing
+                    current_status = db.get_indexing_status()
                     db.update_indexing_status({
                         'errors': current_status['errors'] + 1
                     })
 
+            # Always increment processed counter
             with indexing_lock:
+                # Fetch fresh status before incrementing
+                current_status = db.get_indexing_status()
                 db.update_indexing_status({
                     'processed': current_status['processed'] + 1
                 })
