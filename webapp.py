@@ -620,7 +620,6 @@ HTML_TEMPLATE = """
 
         .pdfjs-canvas-inner {
             padding: 20px;
-            width: 100%;
             min-width: 100%;
             box-sizing: border-box;
             display: inline-block;
@@ -629,6 +628,7 @@ HTML_TEMPLATE = """
         .pdfjs-canvas canvas {
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
             display: block;
+            margin: 0 auto;
         }
 
         .pdfjs-scroll-hint {

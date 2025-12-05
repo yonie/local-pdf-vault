@@ -510,7 +510,6 @@ class DatabaseManager:
 
                 if fields:
                     query = f"UPDATE indexing_status SET {', '.join(fields)}, updated_at = CURRENT_TIMESTAMP WHERE id = 1"
-                    values.append(1)  # for WHERE id = 1, but wait, no, the WHERE is separate
                     conn.execute(query, values)
                     conn.commit()
                 return True
@@ -661,32 +660,9 @@ class PDFScanner:
                 doc.close()
                 return {}
             
-            # Smart page selection for better document coverage:
-            # - Short docs (1-10 pages): scan ALL pages
-            # - Medium docs (11-30 pages): scan first 5, middle, and last 2 (8 pages)
-            # - Long docs (30+ pages): scan first 5, 2 middle pages, and last 2 (9 pages max)
+            # Scan ALL pages for comprehensive analysis
             total_pages = doc.page_count
-            pages_to_scan = []
-            
-            if total_pages <= 10:
-                # Scan all pages for short documents
-                pages_to_scan = list(range(total_pages))
-            elif total_pages <= 30:
-                # First 5, middle, last 2
-                pages_to_scan = [0, 1, 2, 3, 4]
-                middle = total_pages // 2
-                pages_to_scan.append(middle)
-                pages_to_scan.extend([total_pages - 2, total_pages - 1])
-            else:
-                # First 5, 2 middle spread, last 2
-                pages_to_scan = [0, 1, 2, 3, 4]
-                third = total_pages // 3
-                two_thirds = 2 * total_pages // 3
-                pages_to_scan.extend([third, two_thirds])
-                pages_to_scan.extend([total_pages - 2, total_pages - 1])
-            
-            # Remove duplicates and sort
-            pages_to_scan = sorted(set(pages_to_scan))
+            pages_to_scan = list(range(total_pages))
             
             self.logger.info(f"Scanning {len(pages_to_scan)} of {total_pages} pages for {file_path}")
             
