@@ -222,17 +222,20 @@ def run_indexing(directory, force_reindex=False):
 
             # Process
             result = scanner.process_pdf(pdf_file)
-            if db.store_metadata(result):
-                if result.get('error'):
-                    print(f"Processed {filename} with error: {result.get('error')}")
+            
+            # Only store if vision analysis succeeded (no error)
+            if result.get('error') is None:
+                if db.store_metadata(result):
+                    print(f"Successfully processed {filename}")
+                else:
+                    print(f"Failed to store metadata for {filename}")
                     with indexing_lock:
                         db.update_indexing_status({
                             'errors': current_status['errors'] + 1
                         })
-                else:
-                    print(f"Successfully processed {filename}")
             else:
-                print(f"Failed to store metadata for {filename}")
+                # Vision analysis failed - do not store, count as error for retry later
+                print(f"Vision analysis failed for {filename} - not indexed: {result.get('error')}")
                 with indexing_lock:
                     db.update_indexing_status({
                         'errors': current_status['errors'] + 1

@@ -592,7 +592,6 @@ body {
     overflow: auto;
     background: #1a1a1a;
     position: relative;
-    text-align: center;
 }
 
 .pdfjs-canvas.dragging {
@@ -602,7 +601,8 @@ body {
 
 .pdfjs-canvas-inner {
     padding: 20px;
-    display: inline-block;
+    display: flex;
+    justify-content: center;
     min-height: 100%;
 }
 

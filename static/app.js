@@ -39,6 +39,7 @@ function updateUrlWithQuery(query) {
 // LocalStorage keys
 const INDEX_PATH_KEY = 'pdfScanner_lastIndexPath';
 const RECENT_SEARCHES_KEY = 'pdfScanner_recentSearches';
+const SELECTED_DOC_KEY = 'pdfScanner_selectedDocument';
 const MAX_RECENT_SEARCHES = 8;
 
 function loadSavedIndexPath() {
@@ -50,6 +51,18 @@ function loadSavedIndexPath() {
 
 function saveIndexPath(path) {
     localStorage.setItem(INDEX_PATH_KEY, path);
+}
+
+function saveSelectedDocument(hash) {
+    localStorage.setItem(SELECTED_DOC_KEY, hash);
+}
+
+function loadSelectedDocument() {
+    return localStorage.getItem(SELECTED_DOC_KEY);
+}
+
+function clearSelectedDocument() {
+    localStorage.removeItem(SELECTED_DOC_KEY);
 }
 
 // Recent Searches Functions
@@ -183,6 +196,12 @@ async function loadDocuments(query = '') {
         // Hide recent searches when we have search results
         if (query) {
             document.getElementById('recentSearches').style.display = 'none';
+        }
+        
+        // Restore previously selected document if it exists in results
+        const savedHash = loadSelectedDocument();
+        if (savedHash && allResults.some(r => r.file_hash === savedHash)) {
+            showDocument(savedHash);
         }
     } catch (error) {
         console.error('Error loading documents:', error);
@@ -417,6 +436,7 @@ async function clearIndex() {
         const result = await response.json();
         
         if (result.success) {
+            clearSelectedDocument();
             loadStats();
             loadDocuments();
             alert('All records removed successfully. You can scan your folders again to rebuild the index.');
@@ -523,6 +543,7 @@ async function deleteDocument(hash) {
                     </div>
                 `;
                 currentHash = null;
+                clearSelectedDocument();
             }
         } else {
             alert('Error deleting document');
@@ -538,6 +559,9 @@ function showDocument(hash) {
     if (!result) return;
     
     currentHash = hash;
+    
+    // Save selected document to localStorage
+    saveSelectedDocument(hash);
     
     // Update active state in list
     document.querySelectorAll('.result-card').forEach(card => {
@@ -615,7 +639,7 @@ function showDocument(hash) {
     
     // Update preview panel (right)
     document.getElementById('previewPanel').innerHTML = `
-        <div class="preview-header">PDF Preview - Use Ctrl+Scroll to zoom</div>
+        <div class="preview-header">PDF Preview - Drag to pan • Ctrl+Scroll to zoom • Scroll to navigate</div>
         <div class="pdfjs-container">
             <div class="pdfjs-toolbar">
                 <button onclick="pdfViewer.prevPage()" id="prevBtn" disabled>◀ Prev</button>
@@ -629,7 +653,7 @@ function showDocument(hash) {
             </div>
             <div class="pdfjs-canvas" id="pdfCanvas">
                 <div class="pdfjs-canvas-inner" id="pdfCanvasInner"></div>
-                <div class="pdfjs-scroll-hint">🖱️ Ctrl+Scroll to zoom • Scroll to navigate</div>
+                <div class="pdfjs-scroll-hint">🖱️ Drag to pan • Ctrl+Scroll to zoom • Scroll to navigate</div>
             </div>
         </div>
     `;
@@ -700,8 +724,8 @@ class PDFViewer {
         this.pageNumPending = null;
         
         // Zoom configuration
-        this.scale = 1.5;
-        this.defaultScale = 1.5;
+        this.scale = null; // Will be calculated to fit width
+        this.defaultScale = null; // Will be set after fit-to-width
         this.minScale = 0.25;
         this.maxScale = 5.0;
         this.zoomStep = 0.15; // Smoother zoom increment (15%)
@@ -718,12 +742,62 @@ class PDFViewer {
         this.currentPageWidth = 0;
         this.currentPageHeight = 0;
         
+        // Drag state
+        this.isDragging = false;
+        this.dragStartX = 0;
+        this.dragStartY = 0;
+        this.scrollStartX = 0;
+        this.scrollStartY = 0;
+        
         this.setupEventListeners();
         this.loadPDF();
     }
 
     setupEventListeners() {
         const container = this.canvas;
+        
+        // Mouse drag for panning
+        container.addEventListener('mousedown', (e) => {
+            // Only enable dragging if content is larger than container
+            if (container.scrollWidth > container.clientWidth ||
+                container.scrollHeight > container.clientHeight) {
+                this.isDragging = true;
+                this.dragStartX = e.clientX;
+                this.dragStartY = e.clientY;
+                this.scrollStartX = container.scrollLeft;
+                this.scrollStartY = container.scrollTop;
+                container.style.cursor = 'grabbing';
+                e.preventDefault();
+            }
+        });
+        
+        container.addEventListener('mousemove', (e) => {
+            if (this.isDragging) {
+                const deltaX = e.clientX - this.dragStartX;
+                const deltaY = e.clientY - this.dragStartY;
+                container.scrollLeft = this.scrollStartX - deltaX;
+                container.scrollTop = this.scrollStartY - deltaY;
+            }
+        });
+        
+        const stopDragging = () => {
+            if (this.isDragging) {
+                this.isDragging = false;
+                container.style.cursor = '';
+            }
+        };
+        
+        container.addEventListener('mouseup', stopDragging);
+        container.addEventListener('mouseleave', stopDragging);
+        
+        // Update cursor based on content size
+        container.addEventListener('mouseenter', () => {
+            if (!this.isDragging &&
+                (container.scrollWidth > container.clientWidth ||
+                 container.scrollHeight > container.clientHeight)) {
+                container.style.cursor = 'grab';
+            }
+        });
         
         // Ctrl+Scroll for zoom
         container.addEventListener('wheel', (e) => {
@@ -799,12 +873,43 @@ class PDFViewer {
 
             this.updatePageInfo();
             this.updateButtons();
-            this.updateZoomLevel();
-
-            this.renderPage(this.pageNum);
+            
+            // Calculate fit-to-width and render
+            await this.calculateAndRenderFitToWidth();
         } catch (error) {
             console.error('Error loading PDF:', error);
             this.pageInfo.textContent = 'Error loading PDF';
+        }
+    }
+    
+    async calculateAndRenderFitToWidth() {
+        try {
+            const page = await this.pdfDoc.getPage(this.pageNum);
+            const viewport = page.getViewport({ scale: 1 });
+            
+            // Wait for next animation frame to ensure DOM layout is complete
+            await new Promise(resolve => requestAnimationFrame(resolve));
+            
+            // Now measure the container - it should have proper dimensions
+            const containerWidth = this.canvas.clientWidth - 40; // Account for padding
+            
+            if (containerWidth > 0) {
+                const fitScale = Math.min(this.maxScale, Math.max(this.minScale, containerWidth / viewport.width));
+                this.scale = fitScale;
+                this.defaultScale = fitScale;
+            } else {
+                // Fallback if container width is still 0
+                this.scale = 1.5;
+                this.defaultScale = 1.5;
+            }
+            
+            this.updateZoomLevel();
+            this.renderPage(this.pageNum);
+        } catch (error) {
+            console.error('Error calculating fit-to-width:', error);
+            this.scale = 1.5;
+            this.defaultScale = 1.5;
+            this.renderPage(this.pageNum);
         }
     }
 
@@ -936,8 +1041,11 @@ class PDFViewer {
         try {
             const page = await this.pdfDoc.getPage(this.pageNum);
             const viewport = page.getViewport({ scale: 1 });
-            const containerWidth = this.canvasInner.clientWidth - 40; // Account for padding
+            // Use the actual canvas container width (the scrollable div)
+            const containerWidth = this.canvas.clientWidth - 40; // Account for padding
             this.scale = Math.min(this.maxScale, Math.max(this.minScale, containerWidth / viewport.width));
+            this.canvas.scrollTop = 0;
+            this.canvas.scrollLeft = 0;
             this.queueRenderPage(this.pageNum);
             this.updateZoomLevel();
         } catch (error) {
@@ -946,11 +1054,16 @@ class PDFViewer {
     }
 
     resetView() {
-        this.scale = this.defaultScale;
-        this.canvas.scrollTop = 0;
-        this.canvas.scrollLeft = 0;
-        this.queueRenderPage(this.pageNum);
-        this.updateZoomLevel();
+        if (this.defaultScale === null) {
+            // If default wasn't set yet, recalculate fit-to-width
+            this.fitToWidth();
+        } else {
+            this.scale = this.defaultScale;
+            this.canvas.scrollTop = 0;
+            this.canvas.scrollLeft = 0;
+            this.queueRenderPage(this.pageNum);
+            this.updateZoomLevel();
+        }
     }
 
     updateButtons() {

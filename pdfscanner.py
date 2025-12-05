@@ -815,35 +815,25 @@ class PDFScanner:
             # Use vision model as primary method - it analyzes the PDF images directly
             ollama_metadata = self.ollama_vision_analysis(file_path)
             
-            # If vision analysis succeeded, use those results
-            if ollama_metadata:
-                result.update({
-                    "subject": ollama_metadata.get("subject", ""),
-                    "summary": ollama_metadata.get("summary", ""),
-                    "date": ollama_metadata.get("date", ""),
-                    "sender": ollama_metadata.get("sender", ""),
-                    "recipient": ollama_metadata.get("recipient", ""),
-                    "document_type": ollama_metadata.get("document_type", ""),
-                    "tags": ollama_metadata.get("tags", [])
-                })
-                self.logger.info(f"Successfully processed: {file_path}")
-                # Output complete result immediately after processing
-                print(json.dumps(result, indent=2, ensure_ascii=False))
-            else:
-                # Only if vision analysis fails, try basic PDF metadata as fallback
-                pdf_metadata = self.extract_pdf_metadata(file_path)
-                result.update({
-                    "subject": pdf_metadata.get("title", ""),
-                    "summary": "Vision analysis not available",
-                    "date": pdf_metadata.get("creation_date", ""),
-                    "sender": pdf_metadata.get("author", ""),
-                    "recipient": "",
-                    "document_type": "pdf"
-                })
-                result["error"] = "Vision analysis failed, using fallback metadata"
-                self.logger.info(f"Processed with fallback metadata: {file_path}")
-                # Output complete result immediately after processing
-                print(json.dumps(result, indent=2, ensure_ascii=False))
+            # Vision analysis MUST succeed - no fallback allowed
+            if not ollama_metadata:
+                result["error"] = "Vision analysis failed - document not indexed"
+                self.logger.error(f"Vision analysis failed for {file_path} - skipping indexing")
+                return result
+            
+            # Vision analysis succeeded, use those results
+            result.update({
+                "subject": ollama_metadata.get("subject", ""),
+                "summary": ollama_metadata.get("summary", ""),
+                "date": ollama_metadata.get("date", ""),
+                "sender": ollama_metadata.get("sender", ""),
+                "recipient": ollama_metadata.get("recipient", ""),
+                "document_type": ollama_metadata.get("document_type", ""),
+                "tags": ollama_metadata.get("tags", [])
+            })
+            self.logger.info(f"Successfully processed: {file_path}")
+            # Output complete result immediately after processing
+            print(json.dumps(result, indent=2, ensure_ascii=False))
             
         except Exception as e:
             result["error"] = str(e)
@@ -892,14 +882,17 @@ class PDFScanner:
 
             # Process the PDF
             result = self.process_pdf(pdf_file)
-            # Store in database
-            if self.db_manager.store_metadata(result):
-                if result.get("error") is None:
+            
+            # Only store in database if vision analysis succeeded (no error)
+            if result.get("error") is None:
+                if self.db_manager.store_metadata(result):
                     success_count += 1
                 else:
+                    self.logger.error(f"Failed to store metadata for {pdf_file}")
                     error_count += 1
             else:
-                self.logger.error(f"Failed to store metadata for {pdf_file}")
+                # Vision analysis failed - do not store, count as error for retry later
+                self.logger.warning(f"Skipping storage for {pdf_file} - vision analysis failed")
                 error_count += 1
 
         # Log final summary
