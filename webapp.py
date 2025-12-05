@@ -121,12 +121,58 @@ HTML_TEMPLATE = """
             text-transform: uppercase;
         }
 
-        /* Main Layout - 3 Column */
+        /* Main Layout - 3 Column Resizable */
         .main-container {
-            display: grid;
-            grid-template-columns: 340px 1fr 1fr;
+            display: flex;
             height: calc(100vh - 73px);
+            position: relative;
         }
+
+        .panel {
+            flex: 1;
+            min-width: 200px;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .panel[data-panel="sidebar"] {
+            flex: 0 0 340px;
+        }
+
+        .panel[data-panel="details"] {
+            flex: 1;
+        }
+
+        .panel[data-panel="preview"] {
+            flex: 1;
+        }
+
+        .resizer {
+            width: 4px;
+            background: var(--border);
+            cursor: col-resize;
+            position: relative;
+            z-index: 10;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .resizer:hover,
+        .resizer.active {
+            opacity: 1;
+            background: var(--primary);
+        }
+
+        .resizer::before {
+            content: '';
+            position: absolute;
+            left: -4px;
+            right: -4px;
+            top: 0;
+            bottom: 0;
+        }
+
 
         /* Left Panel - Results List */
         .sidebar {
@@ -871,47 +917,55 @@ HTML_TEMPLATE = """
         </div>
     </header>
 
-    <div class="main-container">
-        <!-- Left: Results List -->
-        <aside class="sidebar">
-            <div class="search-container">
-                <div class="search-box">
-                    <span class="search-icon">🔍</span>
-                    <input type="text" class="search-input" id="searchInput"
-                           placeholder="Search documents..."
-                           autocomplete="off">
+    <div class="main-container" id="mainContainer">
+        <!-- Panel 1: Results List -->
+        <div class="panel" data-panel="sidebar">
+            <aside class="sidebar">
+                <div class="search-container">
+                    <div class="search-box">
+                        <span class="search-icon">🔍</span>
+                        <input type="text" class="search-input" id="searchInput"
+                               placeholder="Search documents..."
+                               autocomplete="off">
+                    </div>
                 </div>
-            </div>
-            <div class="filters" id="filters">
-                <button class="filter-btn active" data-filter="all">All</button>
-            </div>
-            <div class="results-header">
-                <span class="results-count" id="resultsCount">Loading...</span>
-            </div>
-            <div class="results-list" id="resultsList">
-                <div class="loading">
-                    <div class="spinner"></div>
-                    <span>Loading...</span>
+                <div class="filters" id="filters">
+                    <button class="filter-btn active" data-filter="all">All</button>
                 </div>
-            </div>
-        </aside>
+                <div class="results-header">
+                    <span class="results-count" id="resultsCount">Loading...</span>
+                </div>
+                <div class="results-list" id="resultsList">
+                    <div class="loading">
+                        <div class="spinner"></div>
+                        <span>Loading...</span>
+                    </div>
+                </div>
+            </aside>
+        </div>
+        <div class="resizer" data-resizer="sidebar"></div>
 
-        <!-- Middle: Document Details -->
-        <main class="details-panel" id="detailsPanel">
-            <div class="details-empty">
-                <div class="details-empty-icon">📋</div>
-                <h3>Document Details</h3>
-                <p>Select a document from the list to view its metadata</p>
-            </div>
-        </main>
+        <!-- Panel 2: Document Details -->
+        <div class="panel" data-panel="details">
+            <main class="details-panel" id="detailsPanel">
+                <div class="details-empty">
+                    <div class="details-empty-icon">📋</div>
+                    <h3>Document Details</h3>
+                    <p>Select a document from the list to view its metadata</p>
+                </div>
+            </main>
+        </div>
+        <div class="resizer" data-resizer="details"></div>
 
-        <!-- Right: PDF Preview -->
-        <aside class="preview-panel" id="previewPanel">
-            <div class="preview-empty">
-                <div class="preview-empty-icon">📄</div>
-                <p>PDF Preview</p>
-            </div>
-        </aside>
+        <!-- Panel 3: PDF Preview -->
+        <div class="panel" data-panel="preview">
+            <aside class="preview-panel" id="previewPanel">
+                <div class="preview-empty">
+                    <div class="preview-empty-icon">📄</div>
+                    <p>PDF Preview</p>
+                </div>
+            </aside>
+        </div>
     </div>
 
     <!-- Admin Panel Modal -->
@@ -978,10 +1032,15 @@ HTML_TEMPLATE = """
         let currentHash = null;
         let searchTimeout = null;
 
+        // Layout Management
+        let panelSizes = {};
+
         // Initialize
         document.addEventListener('DOMContentLoaded', () => {
+            loadLayoutPreferences();
             loadDocuments();
             setupEventListeners();
+            setupResizers();
         });
 
         function setupEventListeners() {
@@ -1331,10 +1390,24 @@ HTML_TEMPLATE = """
             // Update preview panel (right)
             document.getElementById('previewPanel').innerHTML = `
                 <div class="preview-header">PDF Preview</div>
-                <div class="preview-content">
-                    <iframe src="/api/pdf/${hash}"></iframe>
+                <div class="pdfjs-container">
+                    <div class="pdfjs-toolbar">
+                        <button onclick="pdfViewer.prevPage()" id="prevBtn" disabled>◀ Prev</button>
+                        <button onclick="pdfViewer.nextPage()" id="nextBtn" disabled>Next ▶</button>
+                        <button onclick="pdfViewer.zoomIn()">🔍+</button>
+                        <button onclick="pdfViewer.zoomOut()">🔍-</button>
+                        <button onclick="pdfViewer.fitToWidth()">↔ Fit Width</button>
+                        <span class="page-info" id="pageInfo">Loading...</span>
+                    </div>
+                    <div class="pdfjs-canvas" id="pdfCanvas"></div>
                 </div>
             `;
+
+            // Initialize PDF viewer
+            if (window.pdfViewer) {
+                window.pdfViewer.destroy();
+            }
+            window.pdfViewer = new PDFViewer(hash);
         }
 
         function copyPath(path) {
@@ -1353,6 +1426,224 @@ HTML_TEMPLATE = """
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
+        }
+
+        // PDF.js Viewer Class
+        class PDFViewer {
+            constructor(hash) {
+                this.hash = hash;
+                this.pdfDoc = null;
+                this.pageNum = 1;
+                this.pageRendering = false;
+                this.pageNumPending = null;
+                this.scale = 1.5;
+                this.canvas = document.getElementById('pdfCanvas');
+                this.prevBtn = document.getElementById('prevBtn');
+                this.nextBtn = document.getElementById('nextBtn');
+                this.pageInfo = document.getElementById('pageInfo');
+
+                this.loadPDF();
+            }
+
+            async loadPDF() {
+                try {
+                    // Load PDF.js if not loaded
+                    if (!window.pdfjsLib) {
+                        await this.loadPDFJS();
+                    }
+
+                    const loadingTask = pdfjsLib.getDocument(`/api/pdf/${this.hash}`);
+                    this.pdfDoc = await loadingTask.promise;
+
+                    this.pageInfo.textContent = `Page ${this.pageNum} of ${this.pdfDoc.numPages}`;
+                    this.updateButtons();
+
+                    this.renderPage(this.pageNum);
+                } catch (error) {
+                    console.error('Error loading PDF:', error);
+                    this.pageInfo.textContent = 'Error loading PDF';
+                }
+            }
+
+            async loadPDFJS() {
+                return new Promise((resolve, reject) => {
+                    if (window.pdfjsLib) {
+                        resolve();
+                        return;
+                    }
+
+                    const script = document.createElement('script');
+                    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+                    script.onload = () => {
+                        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+                        resolve();
+                    };
+                    script.onerror = reject;
+                    document.head.appendChild(script);
+                });
+            }
+
+            renderPage(num) {
+                this.pageRendering = true;
+
+                this.pdfDoc.getPage(num).then((page) => {
+                    const viewport = page.getViewport({ scale: this.scale });
+                    const canvas = document.createElement('canvas');
+                    const context = canvas.getContext('2d');
+
+                    canvas.height = viewport.height;
+                    canvas.width = viewport.width;
+                    canvas.className = 'pdfjs-page';
+
+                    // Clear previous content
+                    this.canvas.innerHTML = '';
+
+                    const renderContext = {
+                        canvasContext: context,
+                        viewport: viewport
+                    };
+
+                    const renderTask = page.render(renderContext);
+                    renderTask.promise.then(() => {
+                        this.canvas.appendChild(canvas);
+                        this.pageRendering = false;
+
+                        if (this.pageNumPending !== null) {
+                            this.renderPage(this.pageNumPending);
+                            this.pageNumPending = null;
+                        }
+                    });
+                });
+
+                this.pageInfo.textContent = `Page ${num} of ${this.pdfDoc.numPages}`;
+            }
+
+            queueRenderPage(num) {
+                if (this.pageRendering) {
+                    this.pageNumPending = num;
+                } else {
+                    this.renderPage(num);
+                }
+            }
+
+            prevPage() {
+                if (this.pageNum <= 1) return;
+                this.pageNum--;
+                this.queueRenderPage(this.pageNum);
+                this.updateButtons();
+            }
+
+            nextPage() {
+                if (this.pageNum >= this.pdfDoc.numPages) return;
+                this.pageNum++;
+                this.queueRenderPage(this.pageNum);
+                this.updateButtons();
+            }
+
+            zoomIn() {
+                this.scale *= 1.2;
+                this.queueRenderPage(this.pageNum);
+            }
+
+            zoomOut() {
+                this.scale /= 1.2;
+                this.queueRenderPage(this.pageNum);
+            }
+
+            fitToWidth() {
+                if (!this.pdfDoc) return;
+                this.pdfDoc.getPage(this.pageNum).then((page) => {
+                    const viewport = page.getViewport({ scale: 1 });
+                    const containerWidth = this.canvas.clientWidth - 40; // padding
+                    this.scale = containerWidth / viewport.width;
+                    this.queueRenderPage(this.pageNum);
+                });
+            }
+
+            updateButtons() {
+                if (!this.pdfDoc) return;
+                this.prevBtn.disabled = this.pageNum <= 1;
+                this.nextBtn.disabled = this.pageNum >= this.pdfDoc.numPages;
+            }
+
+            destroy() {
+                if (this.canvas) {
+                    this.canvas.innerHTML = '';
+                }
+            }
+        }
+
+        // Layout Management Functions
+        function setupResizers() {
+            const resizers = document.querySelectorAll('.resizer');
+            let currentResizer = null;
+            let startX = 0;
+            let startWidth = 0;
+
+            resizers.forEach(resizer => {
+                resizer.addEventListener('mousedown', (e) => {
+                    currentResizer = resizer;
+                    startX = e.clientX;
+
+                    const panel = resizer.previousElementSibling;
+                    startWidth = panel.offsetWidth;
+
+                    document.addEventListener('mousemove', resize);
+                    document.addEventListener('mouseup', stopResize);
+                    resizer.classList.add('active');
+                });
+            });
+
+            function resize(e) {
+                if (!currentResizer) return;
+
+                const panel = currentResizer.previousElementSibling;
+                const deltaX = e.clientX - startX;
+                const newWidth = Math.max(200, startWidth + deltaX);
+
+                panel.style.flex = `0 0 ${newWidth}px`;
+                saveLayoutPreferences();
+            }
+
+            function stopResize() {
+                if (currentResizer) {
+                    currentResizer.classList.remove('active');
+                    currentResizer = null;
+                }
+                document.removeEventListener('mousemove', resize);
+                document.removeEventListener('mouseup', stopResize);
+            }
+        }
+
+        function saveLayoutPreferences() {
+            // Save panel sizes
+            const panels = document.querySelectorAll('.panel');
+            panels.forEach(panel => {
+                const panelType = panel.dataset.panel;
+                const width = panel.offsetWidth;
+                panelSizes[panelType] = width;
+            });
+            localStorage.setItem('pdfScanner_panelSizes', JSON.stringify(panelSizes));
+        }
+
+        function loadLayoutPreferences() {
+            // Load panel sizes
+            const savedSizes = localStorage.getItem('pdfScanner_panelSizes');
+            if (savedSizes) {
+                try {
+                    panelSizes = JSON.parse(savedSizes);
+                } catch (e) {
+                    console.error('Error loading panel sizes:', e);
+                }
+            }
+
+            // Apply saved sizes
+            Object.entries(panelSizes).forEach(([panelType, size]) => {
+                const panel = document.querySelector(`[data-panel="${panelType}"]`);
+                if (panel) {
+                    panel.style.flex = `0 0 ${size}px`;
+                }
+            });
         }
     </script>
 </body>
