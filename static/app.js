@@ -973,8 +973,13 @@ class PDFViewer {
             this.updatePageInfo();
             this.updateButtons();
 
-            // Calculate fit-to-height and render (changed from fit-to-width)
-            await this.calculateAndRenderFitToHeight();
+            // First fit to width for initial display
+            await this.calculateAndRenderFitToWidth();
+
+            // Then automatically fit to height after a short delay to ensure DOM is fully rendered
+            setTimeout(() => {
+                this.fitToHeight();
+            }, 50);
         } catch (error) {
             console.error('Error loading PDF:', error);
             this.pageInfo.textContent = 'Error loading PDF';
