@@ -12,6 +12,7 @@ Developed with AI assistance
 from flask import Flask, request, jsonify, send_file, render_template, Response
 import os
 import threading
+import logging
 from pdfscanner import DatabaseManager, PDFScanner
 import config
 
@@ -327,5 +328,8 @@ def reindex_single(filename):
         print(f"Reindex error: {e}")
 
 if __name__ == '__main__':
+    # Suppress Flask/Werkzeug request logging
+    logging.getLogger('werkzeug').setLevel(logging.ERROR)
+
     print(f"Starting LocalPDFVault Web Interface on http://{config.WEB_HOST}:{config.WEB_PORT}")
     app.run(host=config.WEB_HOST, port=config.WEB_PORT, debug=False)
