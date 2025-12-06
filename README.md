@@ -62,7 +62,7 @@ cd local-pdf-vault
 # Install Python dependencies
 pip install -r requirements.txt
 
-# Download AI vision model
+# Download AI vision model (configurable in config.py)
 ollama pull qwen3-vl:30b-a3b-instruct-q4_K_M
 
 # Start Ollama (in a separate terminal)
@@ -76,7 +76,7 @@ ollama serve
 python webapp.py
 ```
 
-Then open your browser to **http://localhost:4337**
+Then open your browser to **http://localhost:4337** (configurable in `config.py`)
 
 ### First Use
 
@@ -180,6 +180,8 @@ python pdfscanner.py --directory /path/to/pdfs --verbose
 - `--model` (optional): Ollama model name (default: `qwen3-vl:30b-a3b-instruct-q4_K_M`)
 - `--verbose` (optional): Enable verbose logging
 
+*Note: Web interface defaults are configured in `config.py`*
+
 ### Use Cases for CLI
 
 - **Scheduled Tasks**: Cron jobs or Windows Task Scheduler
@@ -203,6 +205,26 @@ Any vision-capable Ollama model works. Popular choices:
 | `llava:13b` | ~8GB | Fast | Good |
 
 Browse more models: [Ollama Library](https://ollama.ai/library?search=vision)
+
+### Configuration File
+
+LocalPDFVault uses a `config.py` file for customizable settings. Edit this file to change:
+
+- **Web Interface Port**: Default is 4337
+- **Ollama Server**: Host (default: localhost) and port (default: 11434)
+- **Vision Model**: Which Ollama model to use (default: qwen3-vl:30b-a3b-instruct-q4_K_M)
+
+Example `config.py`:
+```python
+# Web Interface Configuration
+WEB_HOST = '0.0.0.0'  # Bind to all interfaces
+WEB_PORT = 4337       # Port for the web interface
+
+# Ollama Configuration
+OLLAMA_HOST = 'localhost'  # Ollama server host
+OLLAMA_PORT = 11434        # Ollama server port
+OLLAMA_MODEL = 'qwen3-vl:30b-a3b-instruct-q4_K_M'  # Vision model
+```
 
 ### System Requirements
 
@@ -252,7 +274,7 @@ curl http://localhost:11434/api/tags
 # List installed models
 ollama list
 
-# Install required model
+# Install required model (configurable in config.py)
 ollama pull qwen3-vl:30b-a3b-instruct-q4_K_M
 ```
 
@@ -260,14 +282,14 @@ ollama pull qwen3-vl:30b-a3b-instruct-q4_K_M
 
 **Port Already in Use**
 ```python
-# Edit webapp.py line 331 to change port:
-app.run(host='0.0.0.0', port=4338, debug=True)
+# Edit config.py to change port:
+WEB_PORT = 4338
 ```
 
 **Can't Access from Other Devices**
 - By default, server binds to `0.0.0.0` (all interfaces)
-- Check firewall allows port 4337
-- Access via: `http://YOUR_IP:4337`
+- Check firewall allows the configured port (default: 4337)
+- Access via: `http://YOUR_IP:4337` (port configurable in config.py)
 
 ### PDF Processing
 
@@ -292,7 +314,7 @@ app.run(host='0.0.0.0', port=4338, debug=True)
 ```
 ┌─────────────────────────────────────────┐
 │         Web Browser (You)               │
-│    http://localhost:4337                │
+│    http://localhost:4337 (configurable) │
 └──────────────┬──────────────────────────┘
                │
                ▼

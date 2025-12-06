@@ -13,6 +13,7 @@ from flask import Flask, request, jsonify, send_file, render_template, Response
 import os
 import threading
 from pdfscanner import DatabaseManager, PDFScanner
+import config
 
 app = Flask(__name__)
 db = DatabaseManager()
@@ -58,16 +59,11 @@ def get_config():
     """Return system configuration for privacy info display"""
     # Get absolute path of database
     db_path = os.path.abspath(db.db_path)
-    
-    # Default Ollama settings (matching PDFScanner defaults)
-    ollama_host = "localhost"
-    ollama_port = 11434
-    ollama_model = "qwen3-vl:30b-a3b-instruct-q4_K_M"
-    
+
     return jsonify({
         'database_path': db_path,
-        'ollama_url': f"http://{ollama_host}:{ollama_port}",
-        'model': ollama_model
+        'ollama_url': f"http://{config.OLLAMA_HOST}:{config.OLLAMA_PORT}",
+        'model': config.OLLAMA_MODEL
     })
 
 @app.route('/api/ollama/status')
@@ -75,47 +71,44 @@ def ollama_status():
     """Check Ollama service status and verify configured model is available"""
     try:
         import requests
-        ollama_host = "localhost"
-        ollama_port = 11434
-        configured_model = "qwen3-vl:30b-a3b-instruct-q4_K_M"
-        base_url = f"http://{ollama_host}:{ollama_port}"
+        base_url = f"http://{config.OLLAMA_HOST}:{config.OLLAMA_PORT}"
         
         # Try to get tags (available models)
         response = requests.get(f"{base_url}/api/tags", timeout=2)
-        
+
         if response.status_code == 200:
             data = response.json()
             models = data.get('models', [])
             model_names = [m.get('name', '') for m in models]
-            
+
             # Check if configured model is available
-            model_available = configured_model in model_names
-            
+            model_available = config.OLLAMA_MODEL in model_names
+
             return jsonify({
                 'status': 'running',
                 'url': base_url,
-                'model': configured_model,
+                'model': config.OLLAMA_MODEL,
                 'model_available': model_available
             })
         else:
             return jsonify({
                 'status': 'error',
                 'url': base_url,
-                'model': configured_model,
+                'model': config.OLLAMA_MODEL,
                 'error': f'HTTP {response.status_code}'
             })
     except requests.exceptions.ConnectionError:
         return jsonify({
             'status': 'offline',
-            'url': f"http://{ollama_host}:{ollama_port}",
-            'model': "qwen3-vl:30b-a3b-instruct-q4_K_M",
+            'url': base_url,
+            'model': config.OLLAMA_MODEL,
             'error': 'Connection refused'
         })
     except Exception as e:
         return jsonify({
             'status': 'error',
-            'url': f"http://{ollama_host}:{ollama_port}",
-            'model': "qwen3-vl:30b-a3b-instruct-q4_K_M",
+            'url': base_url,
+            'model': config.OLLAMA_MODEL,
             'error': str(e)
         })
 
@@ -334,5 +327,5 @@ def reindex_single(filename):
         print(f"Reindex error: {e}")
 
 if __name__ == '__main__':
-    print("Starting LocalPDFVault Web Interface on http://localhost:4337")
-    app.run(host='0.0.0.0', port=4337, debug=True)
+    print(f"Starting LocalPDFVault Web Interface on http://{config.WEB_HOST}:{config.WEB_PORT}")
+    app.run(host=config.WEB_HOST, port=config.WEB_PORT, debug=False)
