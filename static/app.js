@@ -740,14 +740,13 @@ function showDocument(hash) {
         <div class="preview-header">PDF Preview - Drag to pan • Ctrl+Scroll to zoom • Scroll to navigate</div>
         <div class="pdfjs-container">
             <div class="pdfjs-toolbar">
-                <button onclick="pdfViewer.prevPage()" id="prevBtn" disabled>◀ Prev</button>
-                <button onclick="pdfViewer.nextPage()" id="nextBtn" disabled>Next ▶</button>
+                <button onclick="pdfViewer.prevPage()" id="prevBtn" disabled>← Previous page</button>
+                <button onclick="pdfViewer.nextPage()" id="nextBtn" disabled>Next page →</button>
                 <button onclick="pdfViewer.zoomOut()">🔍−</button>
                 <span class="zoom-level" id="zoomLevel">100%</span>
                 <button onclick="pdfViewer.zoomIn()">🔍+</button>
                 <button onclick="pdfViewer.fitToWidth()">↔ Fit Width</button>
                 <button onclick="pdfViewer.fitToHeight()">↕ Fit Height</button>
-                <button onclick="pdfViewer.resetView()">⟲ Reset</button>
                 <span class="page-info" id="pageInfo">Loading...</span>
             </div>
             <div class="pdfjs-canvas" id="pdfCanvas">
@@ -976,10 +975,14 @@ class PDFViewer {
             // First fit to width for initial display
             await this.calculateAndRenderFitToWidth();
 
-            // Then automatically fit to height after a short delay to ensure DOM is fully rendered
-            setTimeout(() => {
-                this.fitToHeight();
-            }, 50);
+            // Then automatically fit to height after the canvas is rendered
+            const observer = new MutationObserver(() => {
+                observer.disconnect();
+                requestAnimationFrame(() => {
+                    this.fitToHeight();
+                });
+            });
+            observer.observe(this.canvasInner, { childList: true });
         } catch (error) {
             console.error('Error loading PDF:', error);
             this.pageInfo.textContent = 'Error loading PDF';
