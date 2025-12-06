@@ -516,6 +516,7 @@ body {
     background: #1a1a1a;
     display: flex;
     flex-direction: column;
+    overflow: hidden; /* Prevent double scrollbars */
 }
 
 .preview-empty {
@@ -557,6 +558,7 @@ body {
     display: flex;
     flex-direction: column;
     height: 100%;
+    overflow: hidden; /* Prevent double scrollbars */
 }
 
 .pdfjs-toolbar {
@@ -613,6 +615,8 @@ body {
     overflow: auto;
     background: #1a1a1a;
     position: relative;
+    min-height: 0; /* Ensure proper flex container behavior */
+    min-width: 0; /* Ensure proper flex container behavior */
 }
 
 .pdfjs-canvas.dragging {

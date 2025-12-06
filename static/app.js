@@ -745,7 +745,8 @@ function showDocument(hash) {
                 <button onclick="pdfViewer.zoomOut()">🔍−</button>
                 <span class="zoom-level" id="zoomLevel">100%</span>
                 <button onclick="pdfViewer.zoomIn()">🔍+</button>
-                <button onclick="pdfViewer.fitToWidth()">↔ Fit</button>
+                <button onclick="pdfViewer.fitToWidth()">↔ Fit Width</button>
+                <button onclick="pdfViewer.fitToHeight()">↕ Fit Height</button>
                 <button onclick="pdfViewer.resetView()">⟲ Reset</button>
                 <span class="page-info" id="pageInfo">Loading...</span>
             </div>
@@ -971,9 +972,9 @@ class PDFViewer {
 
             this.updatePageInfo();
             this.updateButtons();
-            
-            // Calculate fit-to-width and render
-            await this.calculateAndRenderFitToWidth();
+
+            // Calculate fit-to-height and render (changed from fit-to-width)
+            await this.calculateAndRenderFitToHeight();
         } catch (error) {
             console.error('Error loading PDF:', error);
             this.pageInfo.textContent = 'Error loading PDF';
@@ -984,13 +985,13 @@ class PDFViewer {
         try {
             const page = await this.pdfDoc.getPage(this.pageNum);
             const viewport = page.getViewport({ scale: 1 });
-            
+
             // Wait for next animation frame to ensure DOM layout is complete
             await new Promise(resolve => requestAnimationFrame(resolve));
-            
+
             // Now measure the container - it should have proper dimensions
             const containerWidth = this.canvas.clientWidth - 40; // Account for padding
-            
+
             if (containerWidth > 0) {
                 const fitScale = Math.min(this.maxScale, Math.max(this.minScale, containerWidth / viewport.width));
                 this.scale = fitScale;
@@ -1000,11 +1001,42 @@ class PDFViewer {
                 this.scale = 1.5;
                 this.defaultScale = 1.5;
             }
-            
+
             this.updateZoomLevel();
             this.renderPage(this.pageNum);
         } catch (error) {
             console.error('Error calculating fit-to-width:', error);
+            this.scale = 1.5;
+            this.defaultScale = 1.5;
+            this.renderPage(this.pageNum);
+        }
+    }
+
+    async calculateAndRenderFitToHeight() {
+        try {
+            const page = await this.pdfDoc.getPage(this.pageNum);
+            const viewport = page.getViewport({ scale: 1 });
+
+            // Wait for next animation frame to ensure DOM layout is complete
+            await new Promise(resolve => requestAnimationFrame(resolve));
+
+            // Measure the container height for height-based fitting
+            const containerHeight = this.canvas.clientHeight - 40; // Account for padding
+
+            if (containerHeight > 0) {
+                const fitScale = Math.min(this.maxScale, Math.max(this.minScale, containerHeight / viewport.height));
+                this.scale = fitScale;
+                this.defaultScale = fitScale;
+            } else {
+                // Fallback if container height is still 0
+                this.scale = 1.5;
+                this.defaultScale = 1.5;
+            }
+
+            this.updateZoomLevel();
+            this.renderPage(this.pageNum);
+        } catch (error) {
+            console.error('Error calculating fit-to-height:', error);
             this.scale = 1.5;
             this.defaultScale = 1.5;
             this.renderPage(this.pageNum);
@@ -1135,7 +1167,7 @@ class PDFViewer {
 
     async fitToWidth() {
         if (!this.pdfDoc) return;
-        
+
         try {
             const page = await this.pdfDoc.getPage(this.pageNum);
             const viewport = page.getViewport({ scale: 1 });
@@ -1148,6 +1180,24 @@ class PDFViewer {
             this.updateZoomLevel();
         } catch (error) {
             console.error('Error fitting to width:', error);
+        }
+    }
+
+    async fitToHeight() {
+        if (!this.pdfDoc) return;
+
+        try {
+            const page = await this.pdfDoc.getPage(this.pageNum);
+            const viewport = page.getViewport({ scale: 1 });
+            // Use the actual canvas container height (the scrollable div)
+            const containerHeight = this.canvas.clientHeight - 40; // Account for padding
+            this.scale = Math.min(this.maxScale, Math.max(this.minScale, containerHeight / viewport.height));
+            this.canvas.scrollTop = 0;
+            this.canvas.scrollLeft = 0;
+            this.queueRenderPage(this.pageNum);
+            this.updateZoomLevel();
+        } catch (error) {
+            console.error('Error fitting to height:', error);
         }
     }
 

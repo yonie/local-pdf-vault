@@ -29,6 +29,8 @@ except ImportError:
     print("Error: requests library not found. Install with: pip install requests")
     sys.exit(1)
 
+import config
+
 class DatabaseManager:
     """Manages SQLite database operations for PDF metadata storage"""
 
@@ -663,10 +665,17 @@ class PDFScanner:
                 doc.close()
                 return {}
             
-            # Scan ALL pages for comprehensive analysis
+            # Smart selective scanning - first N and last N pages
             total_pages = doc.page_count
-            pages_to_scan = list(range(total_pages))
-            
+            max_pages_per_end = getattr(config, 'MAX_PAGES_PER_END', 3)
+
+            if max_pages_per_end == 0 or total_pages <= (max_pages_per_end * 2):
+                # Scan all pages (original behavior or small documents)
+                pages_to_scan = list(range(total_pages))
+            else:
+                # Large document - scan first and last pages only
+                pages_to_scan = list(range(max_pages_per_end)) + list(range(total_pages - max_pages_per_end, total_pages))
+
             self.logger.info(f"Scanning {len(pages_to_scan)} of {total_pages} pages for {file_path}")
             
             image_data_list = []

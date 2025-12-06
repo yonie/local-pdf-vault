@@ -9,3 +9,7 @@ WEB_PORT = 4337       # Port for the web interface
 OLLAMA_HOST = 'localhost'  # Ollama server host
 OLLAMA_PORT = 11434        # Ollama server port
 OLLAMA_MODEL = 'qwen3-vl:30b-a3b-instruct-q4_K_M'  # Vision model to use
+
+# PDF Processing Configuration
+MAX_PAGES_PER_END = 3  # Number of pages to scan from start and end of large PDFs
+# Set to 0 to scan all pages (original behavior) - WARNING: may cause issues with large documents
