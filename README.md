@@ -425,3 +425,11 @@ Free for personal and commercial use with attribution.
 ---
 
 **⭐ If you find this useful, please star the repository!**
+
+---
+
+## Support
+
+If you find this tool helpful, consider buying me a coffee!
+
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-support-yellow?style=flat&logo=buy-me-a-coffee)](https://buymeacoffee.com/yonie)
