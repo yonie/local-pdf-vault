@@ -54,12 +54,18 @@ ollama pull qwen3-vl:30b-a3b-instruct-q4_K_M
 
 ### 2. Configure your Vault
 
-Edit `docker-compose.yml` to point to your PDF collection:
+Edit `docker-compose.yml` to point to your PDF collection. You must map your local folder to `/data/pdfs:ro` inside the container.
+
+**Examples for different Operating Systems:**
+
+- **Windows**: `- E:\Archief:/data/pdfs:ro` or `- C:\Users\Name\Documents:/data/pdfs:ro`
+- **macOS**: `- /Users/name/Documents/PDFs:/data/pdfs:ro`
+- **Linux**: `- /home/name/documents:/data/pdfs:ro` or `- /mnt/nas/archive:/data/pdfs:ro`
 
 ```yaml
     volumes:
       - ./pdfscanner.db:/app/pdfscanner.db
-      - /path/to/your/pdfs:/data/pdfs:ro  # Change left side to your host path
+      - E:\Archief:/data/pdfs:ro  # Replace with your actual host path
 ```
 
 ### 3. Launch
