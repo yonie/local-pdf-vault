@@ -17,8 +17,9 @@ import json
 import argparse
 import logging
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Callable
 from datetime import datetime
+
 import re
 import sqlite3
 from contextlib import contextmanager
@@ -773,12 +774,13 @@ class PDFScanner:
         
         return {}
     
-    def scan_directory(self, directory: str) -> List[str]:
+    def scan_directory(self, directory: str, on_progress: Optional[Callable] = None) -> List[str]:
         """
         Recursively scan directory for PDF files
         
         Args:
             directory: Directory path to scan
+            on_progress: Optional callback function(current_path)
             
         Returns:
             List of PDF file paths
@@ -786,6 +788,8 @@ class PDFScanner:
         pdf_files = []
         try:
             for root, dirs, files in os.walk(directory):
+                if on_progress:
+                    on_progress(root)
                 for file in files:
                     if file.lower().endswith('.pdf'):
                         pdf_files.append(os.path.join(root, file))
@@ -796,6 +800,7 @@ class PDFScanner:
         except Exception as e:
             self.logger.error(f"Failed to scan directory {directory}: {e}")
             return []
+
     
     def process_pdf(self, file_path: str) -> Dict[str, Any]:
         """

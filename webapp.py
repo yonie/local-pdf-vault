@@ -64,8 +64,10 @@ def get_config():
     return jsonify({
         'database_path': db_path,
         'ollama_url': f"http://{config.OLLAMA_HOST}:{config.OLLAMA_PORT}",
-        'model': config.OLLAMA_MODEL
+        'model': config.OLLAMA_MODEL,
+        'vault_path': config.SCAN_DIRECTORY
     })
+
 
 @app.route('/api/ollama/status')
 def ollama_status():
@@ -125,20 +127,18 @@ def clear_database():
 
 @app.route('/api/index', methods=['POST'])
 def start_indexing():
-    data = request.get_json()
-    path = data.get('path', '')
+    data = request.get_json() or {}
     force = data.get('force', False)  # Force re-indexing even if already indexed
-
-    if not path:
-        return jsonify({'success': False, 'error': 'No path provided'})
+    path = config.SCAN_DIRECTORY
 
     if not os.path.exists(path):
-        return jsonify({'success': False, 'error': 'Directory does not exist'})
+        return jsonify({'success': False, 'error': f'Vault directory "{path}" does not exist inside the container. Check your docker-compose volume mapping.'})
 
     if not os.path.isdir(path):
-        return jsonify({'success': False, 'error': 'Path is not a directory'})
+        return jsonify({'success': False, 'error': f'Vault path "{path}" is not a directory.'})
 
     with indexing_lock:
+
         current_status = db.get_indexing_status()
         if current_status['is_running']:
             return jsonify({'success': False, 'error': 'Indexing already in progress'})
@@ -201,7 +201,12 @@ def reindex_document(file_hash):
 
 def run_indexing(directory, force_reindex=False):
     try:
-        scanner = PDFScanner()
+        scanner = PDFScanner(
+            host=config.OLLAMA_HOST,
+            port=config.OLLAMA_PORT,
+            model=config.OLLAMA_MODEL
+        )
+
 
         # Test Ollama connection
         if not scanner.test_ollama_connection():
@@ -212,9 +217,31 @@ def run_indexing(directory, force_reindex=False):
                 })
             return
 
+        print(f"Indexing started for {directory}")
+
+        with indexing_lock:
+            db.update_indexing_status({
+                'current_file': 'Searching for PDF files...',
+                'total': 0,
+                'processed': 0
+            })
+
+        def scan_progress(current_path):
+            # Only update every few directories to avoid flooding the DB
+            # We can use a simple counter or just update with a limited frequency
+            # For now, let's just update the status with the current directory name
+            rel_path = os.path.relpath(current_path, directory)
+            display_path = f"Scanning: {rel_path}" if rel_path != "." else "Scanning root..."
+            
+            # Use a non-blocking way to update if possible, but since we are in a thread it's fine
+            # We skip the lock here if we are careful, or just use it briefly
+            with indexing_lock:
+                db.update_indexing_status({'current_file': display_path})
+
         # Find all PDFs
-        pdf_files = scanner.scan_directory(directory)
+        pdf_files = scanner.scan_directory(directory, on_progress=scan_progress)
         total_files = len(pdf_files)
+
 
         with indexing_lock:
             db.update_indexing_status({
@@ -320,7 +347,12 @@ def run_indexing(directory, force_reindex=False):
 
 def reindex_single(filename):
     try:
-        scanner = PDFScanner()
+        scanner = PDFScanner(
+            host=config.OLLAMA_HOST,
+            port=config.OLLAMA_PORT,
+            model=config.OLLAMA_MODEL
+        )
+
         if scanner.test_ollama_connection():
             result = scanner.process_pdf(filename)
             db.store_metadata(result)

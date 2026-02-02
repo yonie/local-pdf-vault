@@ -1,13 +1,12 @@
 # LocalPDFVault 🔒📄
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![Flask](https://img.shields.io/badge/Flask-2.3+-green.svg)](https://flask.palletsprojects.com/)
+[![Docker](https://img.shields.io/badge/Docker-Appliance-blue.svg)](https://www.docker.com/)
 [![Ollama](https://img.shields.io/badge/Ollama-AI-orange.svg)](https://ollama.ai)
 
-**Privacy-focused AI-powered local PDF search with beautiful web interface**
+**Privacy-focused AI-powered local PDF search appliance.**
 
-LocalPDFVault is a self-hosted web application that uses local AI vision models (via Ollama) to automatically index and search your PDF documents. With an intuitive web interface and powerful search capabilities, you can organize and find your documents instantly - all while keeping your data 100% private on your own machine.
+LocalPDFVault is a self-hosted "Vault" application that uses local AI vision models (via Ollama) to automatically index and search your PDF documents. It runs as a secure Docker container with read-only access to your archive, ensuring your documents are never modified or sent to the cloud.
 
 ![Screenshot](screenshot.png)
 
@@ -15,421 +14,113 @@ LocalPDFVault is a self-hosted web application that uses local AI vision models 
 
 ## ✨ Features
 
-### 🌐 Web Interface (Primary)
-- **Beautiful Modern UI** - Clean, responsive design that works on desktop, tablet, and mobile
+### 🌐 Web Interface
+- **Modern Search UI** - Clean, responsive design for all devices
 - **Instant Search** - Real-time fuzzy search with intelligent relevance ranking
 - **PDF Preview** - Built-in viewer with zoom, pan, and page navigation
-- **Live Progress** - Watch AI analyze your documents in real-time
-- **Easy Management** - One-click folder indexing from the web UI
-- **Recent Searches** - Quick access to your search history
-- **Dark Mode** - Eye-friendly interface for long viewing sessions
+- **Update Index** - One-button update to keep your index in sync with your files
+- **Dark Mode** - Professional, eye-friendly interface
 
-### 🤖 AI-Powered Intelligence
-- **Vision Model Analysis** - Uses Ollama's local vision models to "read" your PDFs
-- **Smart Metadata** - Automatically extracts subject, summary, dates, sender/recipient, document type
-- **Auto-Tagging** - AI generates relevant categorization tags for each document
-- **Multi-Language** - Works with documents in any language
-- **Configurable Models** - Use any Ollama vision model you prefer
+### 🤖 AI Intelligence
+- **Vision Model Analysis** - "Reads" your PDFs using local Ollama models
+- **Smart Metadata** - Extracts subject, summary, dates, sender/recipient, and type
+- **Auto-Tagging** - Generates relevant categorization tags automatically
+- **100% Private** - All processing happens locally on your hardware
 
-### 🔒 Privacy & Security
-- **100% Local** - All processing happens on your machine, nothing sent to the cloud
-- **Your Files Stay Put** - PDFs remain in their original locations
-- **Open Source** - Full transparency, audit the code yourself
-- **No Telemetry** - Zero tracking, analytics, or phone-home features
-
-### ⚡ Performance
-- **Fast Search** - SQLite database for instant results from thousands of documents
-- **Efficient Indexing** - Smart skip of already-processed files
-- **Batch Processing** - Index entire folders with progress tracking
-- **Low Resource** - Runs efficiently on modest hardware
+### 🔒 Security & Safety
+- **Docker Isolation** - Runs in a sealed environment
+- **Read-Only Vault** - Mounts your archive as `ro`, making it physically impossible for the app to delete or modify your files
+- **Zero Telemetry** - No tracking, no phone-home, no cloud dependencies
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Quick Start (Docker)
 
 ### Prerequisites
 
-1. **Python 3.8+** - [Download Python](https://www.python.org/downloads/)
-2. **Ollama** - [Install Ollama](https://ollama.ai)
+1.  **Ollama** - [Install Ollama](https://ollama.ai) (must be running on your host machine)
+2.  **Docker & Docker Compose** - [Install Docker](https://docs.docker.com/get-docker/)
 
-### Installation
+### 1. Installation
 
 ```bash
 # Clone the repository
 git clone https://github.com/yonie/local-pdf-vault.git
 cd local-pdf-vault
 
-# Install Python dependencies
-pip install -r requirements.txt
-
-# Download AI vision model (configurable in config.py)
+# Download the AI vision model
 ollama pull qwen3-vl:30b-a3b-instruct-q4_K_M
-
-# Start Ollama (in a separate terminal)
-ollama serve
 ```
 
-### Launch Web Interface
+### 2. Configure your Vault
+
+Edit `docker-compose.yml` to point to your PDF collection:
+
+```yaml
+    volumes:
+      - ./pdfscanner.db:/app/pdfscanner.db
+      - /path/to/your/pdfs:/data/pdfs:ro  # Change left side to your host path
+```
+
+### 3. Launch
 
 ```bash
-# Start the web application
-python webapp.py
+docker-compose up -d
 ```
 
-Then open your browser to **http://localhost:4337** (configurable in `config.py`)
+Open your browser to **http://localhost:4337**
 
-### First Use
+### 4. Indexing
 
-1. Click **"⚙️ Manage Index"** button
-2. Enter the path to a folder containing PDFs
-3. Click **"🔍 Scan Folder"**
-4. Watch as AI analyzes your documents!
-5. Use the search box to find anything instantly
+1.  Click **"⚙️ Manage Index"**
+2.  Click **"🔄 Update Index"**
+3.  The AI will now begin analyzing your documents. Results will appear in the search view as they are processed.
 
 ---
 
 ## 📖 How It Works
 
-1. **📁 Scan**: Recursively finds all PDF files in specified folders
-2. **🔑 Hash**: Generates SHA-256 hash to detect duplicates
-3. **🖼️ Convert**: Converts PDF pages to high-quality images
-4. **🤖 Analyze**: Local Ollama vision model "reads" the document
-5. **📝 Extract**: AI extracts metadata (subject, summary, dates, sender, recipient, type, tags)
-6. **💾 Index**: Stores searchable metadata in local SQLite database
-7. **🔍 Search**: Instant fuzzy search with intelligent relevance ranking
-
-### AI Vision Analysis
-
-LocalPDFVault uses vision models that can actually "see" and understand your documents:
-- Reads text from scanned documents (OCR capability)
-- Understands layout and document structure
-- Identifies logos, signatures, and visual elements
-- Extracts information from tables and forms
-- Works with handwritten notes (model dependent)
-
----
-
-## 🎯 Web Interface Guide
-
-### Search Features
-
-**Search Syntax:**
-- Simple terms: `invoice` or `2024`
-- Multiple words: `consulting services` (finds documents with both words)
-- Exact phrases: Results with exact phrase matches rank highest
-
-**Relevance Scoring:**
-- 🟢 **High** (80-100%) - Exact phrase matches, all terms present
-- 🔵 **Medium** (50-79%) - Multiple terms found
-- 🟡 **Low** (10-49%) - Partial or fuzzy matches
-
-**Search Scope:**
-- Filename
-- Subject
-- Summary
-- Sender/Recipient
-- Document type
-- All tags
-
-### Document Management
-
-**Indexing:**
-- Click "Manage Index" → Enter folder path → Scan
-- Progress shows: files processed, skipped, errors
-- Already-indexed files are automatically skipped
-- Re-scan same folder to pick up new PDFs
-
-**Individual Documents:**
-- Click any result to view PDF and metadata
-- "📄 Open in New Tab" - view in browser
-- "📋 Copy Path" - copy file location
-- Re-index option for updated documents
-
-**Database Maintenance:**
-- View statistics (total documents, types, errors)
-- "🔄 Reset Index" - re-analyze all files with fresh AI
-- Database stored as `pdfscanner.db` in project folder
-
----
-
-## 💻 Command-Line Interface
-
-For automation and scripting, LocalPDFVault includes a CLI:
-
-### Basic CLI Usage
-
-```bash
-# Index a directory
-python pdfscanner.py --directory /path/to/pdfs
-
-# Custom Ollama settings
-python pdfscanner.py --directory /path/to/pdfs \
-  --host localhost \
-  --port 11434 \
-  --model llama3.2-vision
-
-# Enable detailed logging
-python pdfscanner.py --directory /path/to/pdfs --verbose
-```
-
-### CLI Arguments
-
-- `--directory` (required): Directory path to scan for PDF files
-- `--host` (optional): Ollama server host (default: `localhost`)
-- `--port` (optional): Ollama server port (default: `11434`)
-- `--model` (optional): Ollama model name (default: `qwen3-vl:30b-a3b-instruct-q4_K_M`)
-- `--verbose` (optional): Enable verbose logging
-
-*Note: Web interface defaults are configured in `config.py`*
-
-### Use Cases for CLI
-
-- **Scheduled Tasks**: Cron jobs or Windows Task Scheduler
-- **CI/CD Pipelines**: Automated document processing
-- **Batch Operations**: Index multiple folders via script
-- **Server Deployments**: Headless environments
+1.  **📁 Vault**: Mounts your host directory to `/data/pdfs` inside the container.
+2.  **🤖 Analyze**: Local Ollama vision model "sees" the document pages.
+3.  **📝 Extract**: AI extracts rich metadata (subject, summary, dates, tags).
+4.  **💾 Index**: Searchable metadata is stored in a local SQLite database.
+5.  **🔍 Search**: You get instant, tiered search results across your entire collection.
 
 ---
 
 ## ⚙️ Configuration
 
-### Supported Ollama Models
+### Supported Models
 
-Any vision-capable Ollama model works. Popular choices:
+Popular choices for the `OLLAMA_MODEL` environment variable:
 
 | Model | Size | Performance | Accuracy |
 |-------|------|-------------|----------|
 | `qwen3-vl:30b-a3b-instruct-q4_K_M` | ~17GB | Fast | Excellent ⭐ |
 | `llama3.2-vision:11b` | ~7GB | Very Fast | Good |
-| `llama3.2-vision:90b` | ~55GB | Slower | Excellent |
 | `llava:13b` | ~8GB | Fast | Good |
 
-Browse more models: [Ollama Library](https://ollama.ai/library?search=vision)
+### Environment Variables
 
-### Configuration File
-
-LocalPDFVault uses a `config.py` file for customizable settings. Edit this file to change:
-
-- **Web Interface Port**: Default is 4337
-- **Ollama Server**: Host (default: localhost) and port (default: 11434)
-- **Vision Model**: Which Ollama model to use (default: qwen3-vl:30b-a3b-instruct-q4_K_M)
-- **PDF Processing**: Page scanning behavior for large documents
-
-Example `config.py`:
-```python
-# Web Interface Configuration
-WEB_HOST = '0.0.0.0'  # Bind to all interfaces
-WEB_PORT = 4337       # Port for the web interface
-
-# Ollama Configuration
-OLLAMA_HOST = 'localhost'  # Ollama server host
-OLLAMA_PORT = 11434        # Ollama server port
-OLLAMA_MODEL = 'qwen3-vl:30b-a3b-instruct-q4_K_M'  # Vision model
-
-# PDF Processing Configuration
-MAX_PAGES_PER_END = 3  # Number of pages to scan from start and end of large PDFs
-# Set to 0 to scan all pages (original behavior) - WARNING: may cause issues with large documents
-```
-
-### System Requirements
-
-| Component | Minimum | Recommended |
-|-----------|---------|-------------|
-| **CPU** | Dual-core | Quad-core+ |
-| **RAM** | 8GB | 16GB+ |
-| **Storage** | 5GB free | 20GB+ free |
-| **GPU** | Optional | NVIDIA/AMD (faster) |
-
----
-
-## 📊 Example Metadata
-
-```json
-{
-  "filename": "/Users/me/Documents/invoice-2024.pdf",
-  "file_hash": "a1b2c3d4e5f67890...",
-  "subject": "Invoice #2024-1056 - Consulting Services",
-  "summary": "Professional services invoice for September 2024, including hourly rates and payment terms.",
-  "date": "2024-09-30",
-  "sender": "ABC Consulting LLC",
-  "recipient": "XYZ Corporation",
-  "document_type": "invoice",
-  "tags": ["invoice", "consulting", "services", "payment", "2024"],
-  "error": null
-}
-```
+Configure these in `docker-compose.yml`:
+- `OLLAMA_HOST`: Set to `host.docker.internal` to reach your host's Ollama.
+- `OLLAMA_MODEL`: Which vision model to use.
+- `SCAN_DIRECTORY`: Internal path to scan (default: `/data/pdfs`).
+- `MAX_PAGES_PER_END`: How many pages to scan for large PDFs.
 
 ---
 
 ## 🔧 Troubleshooting
 
-### Ollama Issues
+### Connection to Ollama Failed
+Ensure your host's Ollama is listening on all interfaces. On Windows/Linux, set the environment variable `OLLAMA_HOST=0.0.0.0` for the Ollama service.
 
-**Connection Failed**
-```bash
-# Ensure Ollama is running
-ollama serve
-
-# Test connection
-curl http://localhost:11434/api/tags
-```
-
-**Model Not Found**
-```bash
-# List installed models
-ollama list
-
-# Install required model (configurable in config.py)
-ollama pull qwen3-vl:30b-a3b-instruct-q4_K_M
-```
-
-### Web Interface Issues
-
-**Port Already in Use**
-```python
-# Edit config.py to change port:
-WEB_PORT = 4338
-```
-
-**Can't Access from Other Devices**
-- By default, server binds to `0.0.0.0` (all interfaces)
-- Check firewall allows the configured port (default: 4337)
-- Access via: `http://YOUR_IP:4337` (port configurable in config.py)
-
-### PDF Processing
-
-**Indexing Errors**
-- Check PDF files aren't corrupted
-- Verify file permissions (read access)
-- Ensure sufficient disk space
-- Check Ollama logs for vision model issues
-
-**Slow Performance**
-- Use smaller/faster Ollama model
-- Close other resource-intensive apps
-- Consider GPU acceleration for Ollama
-- Index smaller batches at a time
-
----
-
-## 🏗️ Technical Architecture
-
-### System Components
-
-```
-┌─────────────────────────────────────────┐
-│         Web Browser (You)               │
-│    http://localhost:4337 (configurable) │
-└──────────────┬──────────────────────────┘
-               │
-               ▼
-┌─────────────────────────────────────────┐
-│       Flask Web Server (webapp.py)      │
-│  • Serves HTML/CSS/JS                   │
-│  • API endpoints                        │
-│  • Background indexing                  │
-└──────────────┬──────────────────────────┘
-               │
-               ▼
-┌─────────────────────────────────────────┐
-│    PDF Scanner Engine (pdfscanner.py)   │
-│  • Directory scanning                   │
-│  • PDF processing                       │
-│  • Vision model integration             │
-└──────────────┬──────────┬───────────────┘
-               │          │
-               ▼          ▼
-         ┌─────────┐  ┌──────────────┐
-         │ SQLite  │  │ Ollama API   │
-         │Database │  │ (localhost)  │
-         └─────────┘  └──────────────┘
-```
-
-### Database Schema
-
-**pdf_metadata table:**
-- `file_hash` (PRIMARY KEY) - SHA-256 hash
-- `filename` - Full file path
-- `subject` - Document title/topic
-- `summary` - Brief content summary
-- `date` - Document date (YYYY-MM-DD)
-- `sender` - From information
-- `recipient` - To information
-- `document_type` - Category (invoice, contract, etc.)
-- `tags` - JSON array of tags
-- `error` - Error message if processing failed
-- `last_updated` - Timestamp
-
-**Search Algorithm:**
-- Tiered relevance scoring (exact phrase > all terms > partial > fuzzy)
-- Fuzzy matching for typo tolerance
-- Multi-field search across all metadata
-- Results sorted by relevance score
-
----
-
-## 📦 Dependencies
-
-```
-requests>=2.31.0      # Ollama API communication
-PyPDF2>=3.0.1         # PDF metadata extraction
-pymupdf>=1.23.8       # PDF to image conversion
-flask>=2.3.0          # Web framework
-```
-
-See [`requirements.txt`](requirements.txt) for complete list.
-
----
-
-## 🤝 Contributing
-
-Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for:
-- Development setup
-- Code style guidelines
-- Testing procedures
-- Pull request process
+### Vault Path Not Found
+Verify that your host path in `docker-compose.yml` is absolute and correctly formatted. The app expects your PDFs to be mapped specifically to `/data/pdfs` inside the container.
 
 ---
 
 ## 📄 License
-
-MIT License - see [LICENSE](LICENSE) file for details.
-
-Free for personal and commercial use with attribution.
-
----
-
-## 👤 Author
-
-**[@yonie](https://github.com/yonie)**
-
-*Developed with AI assistance*
-
----
-
-## 🙏 Acknowledgments
-
-- [Ollama](https://ollama.ai) - Local AI model runtime
-- [PyMuPDF](https://pymupdf.readthedocs.io/) - PDF processing library
-- [Flask](https://flask.palletsprojects.com/) - Web framework
-- [PDF.js](https://mozilla.github.io/pdf.js/) - Browser PDF rendering
-
----
-
-## 🔗 Links
-
-- [🐛 Report Bug](https://github.com/yonie/local-pdf-vault/issues)
-- [💡 Request Feature](https://github.com/yonie/local-pdf-vault/issues)
-- [💬 Discussions](https://github.com/yonie/local-pdf-vault/discussions)
-
----
+MIT License - Free for personal and commercial use.
 
 **⭐ If you find this useful, please star the repository!**
-
----
-
-## Support
-
-If you find this tool helpful, consider buying me a coffee!
-
-[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-support-yellow?style=flat&logo=buy-me-a-coffee)](https://buymeacoffee.com/yonie)

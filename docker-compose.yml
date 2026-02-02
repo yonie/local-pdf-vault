@@ -1,0 +1,18 @@
+services:
+  local-pdf-vault:
+    build: .
+    container_name: local-pdf-vault
+    ports:
+      - "4337:4337"
+    environment:
+      - OLLAMA_HOST=host.docker.internal
+      - OLLAMA_PORT=11434
+      - OLLAMA_MODEL=qwen3-vl:30b-a3b-instruct-q4_K_M
+      - SCAN_DIRECTORY=/data/pdfs
+      - MAX_PAGES_PER_END=3
+    volumes:
+      - ./pdfscanner.db:/app/pdfscanner.db
+      - E:\Archief:/data/pdfs:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped

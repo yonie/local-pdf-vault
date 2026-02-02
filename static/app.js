@@ -13,7 +13,6 @@ let statusPollingInterval = null;
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
     loadLayoutPreferences();
-    loadSavedIndexPath();
     loadQueryFromUrl();
     setupEventListeners();
     setupResizers();
@@ -21,6 +20,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Don't call loadTotalDocs() here - startStatusPolling() will do it immediately
     startStatusPolling(); // Start periodic status checking (every 5 seconds)
 });
+
 
 // URL query parameter handling
 function loadQueryFromUrl() {
@@ -41,21 +41,10 @@ function updateUrlWithQuery(query) {
 }
 
 // LocalStorage keys
-const INDEX_PATH_KEY = 'pdfScanner_lastIndexPath';
 const RECENT_SEARCHES_KEY = 'pdfScanner_recentSearches';
 const SELECTED_DOC_KEY = 'pdfScanner_selectedDocument';
 const MAX_RECENT_SEARCHES = 8;
 
-function loadSavedIndexPath() {
-    const savedPath = localStorage.getItem(INDEX_PATH_KEY);
-    if (savedPath) {
-        document.getElementById('indexPath').value = savedPath;
-    }
-}
-
-function saveIndexPath(path) {
-    localStorage.setItem(INDEX_PATH_KEY, path);
-}
 
 function saveSelectedDocument(hash) {
     localStorage.setItem(SELECTED_DOC_KEY, hash);
@@ -356,6 +345,7 @@ async function loadSystemConfig() {
         document.getElementById('configDbPath').textContent = config.database_path || 'Unknown';
         document.getElementById('configOllamaUrl').textContent = config.ollama_url || 'Unknown';
         document.getElementById('configModel').textContent = config.model || 'Unknown';
+        document.getElementById('vaultDisplay').textContent = config.vault_path || '/data/pdfs';
     } catch (error) {
         console.error('Error loading config:', error);
         document.getElementById('configDbPath').textContent = 'Error loading';
@@ -363,6 +353,7 @@ async function loadSystemConfig() {
         document.getElementById('configModel').textContent = 'Error loading';
     }
 }
+
 
 async function loadTotalDocs(statusData = null) {
     try {
@@ -421,16 +412,29 @@ async function checkIndexingStatus() {
                 document.getElementById('indexProgress').style.display = 'block';
                 document.getElementById('stopBtn').style.display = 'inline-block';
                 document.getElementById('indexBtn').disabled = true;
-                document.getElementById('indexBtn').innerHTML = '⏳ Scanning...';
+                document.getElementById('indexBtn').innerHTML = '⏳ Processing...';
             }
             
             // Update progress details
-            document.getElementById('progressStatus').textContent = 'Indexing...';
-            document.getElementById('progressCount').textContent =
-                `${status.processed}/${status.total} (${status.skipped} skipped, ${status.errors} errors)`;
+            const progressBarContainer = document.querySelector('.progress-bar-container');
+            if (status.total > 0) {
+                progressBarContainer.classList.remove('indeterminate');
+                document.getElementById('progressStatus').textContent = 'Updating Index...';
+                document.getElementById('progressCount').textContent =
+                    `${status.processed}/${status.total} (${status.skipped} skipped, ${status.errors} errors)`;
+            } else {
+                progressBarContainer.classList.add('indeterminate');
+                document.getElementById('progressStatus').textContent = 'Scanning Vault...';
+                document.getElementById('progressCount').textContent = 'Discovering PDF files...';
+            }
             
             const pct = status.total > 0 ? (status.processed / status.total * 100) : 0;
-            document.getElementById('progressBar').style.width = pct + '%';
+            if (status.total > 0) {
+                document.getElementById('progressBar').style.width = pct + '%';
+            } else {
+                document.getElementById('progressBar').style.width = '100%';
+            }
+
             document.getElementById('progressFile').textContent = status.current_file || '-';
             
         } else {
@@ -439,7 +443,7 @@ async function checkIndexingStatus() {
                 document.getElementById('indexProgress').style.display = 'none';
                 document.getElementById('stopBtn').style.display = 'none';
                 document.getElementById('indexBtn').disabled = false;
-                document.getElementById('indexBtn').innerHTML = '🔍 Scan Folder';
+                document.getElementById('indexBtn').innerHTML = '🔄 Update Index';
                 document.getElementById('stopBtn').disabled = false;
                 document.getElementById('stopBtn').innerHTML = 'Stop';
                 
@@ -448,6 +452,7 @@ async function checkIndexingStatus() {
                 loadDocuments();
             }
         }
+
     } catch (error) {
         console.error('Error checking indexing status:', error);
     }
@@ -483,76 +488,63 @@ async function checkOllamaStatus() {
 let indexingInterval = null;
 
 async function startIndexing() {
-    const path = document.getElementById('indexPath').value.trim();
-    if (!path) {
-        alert('Please enter a directory path');
-        return;
-    }
-
     const btn = document.getElementById('indexBtn');
     btn.disabled = true;
-    btn.innerHTML = '⏳ Scanning...';
+    btn.innerHTML = '⏳ Initializing...';
 
     try {
         const response = await fetch('/api/index', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ path: path })
+            body: JSON.stringify({})
         });
 
         const result = await response.json();
         
         if (result.success) {
-            // Save the path to localStorage
-            saveIndexPath(path);
             // Immediately check status to show progress UI
             await checkIndexingStatus();
         } else {
             alert('Error: ' + result.error);
             btn.disabled = false;
-            btn.innerHTML = '🔍 Scan Folder';
+            btn.innerHTML = '🔄 Update Index';
         }
     } catch (error) {
         alert('Error starting indexing: ' + error);
         btn.disabled = false;
-        btn.innerHTML = '🔍 Start Indexing';
+        btn.innerHTML = '🔄 Update Index';
     }
 }
 
-async function startReindexing(path) {
-    if (!path) {
-        alert('Please enter a directory path');
-        return;
-    }
-
+async function startReindexing() {
     const btn = document.getElementById('indexBtn');
     btn.disabled = true;
-    btn.innerHTML = '⏳ Scanning...';
+    btn.innerHTML = '⏳ Initializing...';
 
     try {
         const response = await fetch('/api/index', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ path: path, force: true })
+            body: JSON.stringify({ force: true })
         });
 
         const result = await response.json();
         
         if (result.success) {
-            saveIndexPath(path);
             // Immediately check status to show progress UI
             await checkIndexingStatus();
         } else {
             alert('Error: ' + result.error);
             btn.disabled = false;
-            btn.innerHTML = '🔍 Scan Folder';
+            btn.innerHTML = '🔄 Update Index';
         }
     } catch (error) {
         alert('Error starting analysis: ' + error);
         btn.disabled = false;
-        btn.innerHTML = '🔍 Scan Folder';
+        btn.innerHTML = '🔄 Update Index';
     }
 }
+
 
 async function clearIndex() {
     if (!confirm('Remove all document records from the database?\\n\\nThis will clear the index - your actual PDF files will NOT be deleted.')) return;
@@ -575,13 +567,7 @@ async function clearIndex() {
 }
 
 async function clearAndRescan() {
-    const savedPath = localStorage.getItem(INDEX_PATH_KEY);
-    if (!savedPath) {
-        alert('No previously scanned folder found. Please enter a folder path first.');
-        return;
-    }
-
-    if (!confirm(`Refresh the search index for:\\n${savedPath}\\n\\nThis will clear the database and re-analyze all PDFs with fresh AI analysis.\\n\\n⚠️ Your PDF files will NOT be modified or deleted - only the search database will be updated.\\n\\nThis may take a while. Continue?`)) return;
+    if (!confirm(`Refresh the search index for your vault?\n\nThis will clear the database and re-analyze all PDFs with fresh AI analysis.\n\n⚠️ Your PDF files will NOT be modified or deleted - only the search database will be updated.\n\nThis may take a while. Continue?`)) return;
 
     // First clear the index
     try {
@@ -591,10 +577,11 @@ async function clearAndRescan() {
     }
 
     // Then start re-indexing
-    startReindexing(savedPath);
+    startReindexing();
 }
 
 async function stopIndexing() {
+
     try {
         const response = await fetch('/api/index/stop', { method: 'POST' });
         const result = await response.json();

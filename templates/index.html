@@ -109,17 +109,16 @@
 
                 <!-- Scan for Files Section -->
                 <div class="admin-section">
-                    <h3>📂 Scan PDF Files</h3>
+                    <h3>📂 Document Vault</h3>
                     <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">
-                        Enter a folder path to scan for PDFs. New files will be added to the index.
+                        Update the index to pick up new documents or changes in your vault.
                     </p>
                     <div class="index-form">
-                        <input type="text" id="indexPath" class="index-input"
-                               placeholder="e.g., C:\Documents\PDFs">
-                        <button class="btn btn-primary" onclick="startIndexing()" id="indexBtn">
-                            🔍 Scan
+                        <button class="btn btn-primary" onclick="startIndexing()" id="indexBtn" style="width: 100%; justify-content: center; font-weight: 600;">
+                            🔄 Update Index
                         </button>
                     </div>
+
                     <div class="index-progress" id="indexProgress" style="display: none;">
                         <div class="progress-header">
                             <span id="progressStatus">Scanning...</span>
@@ -153,7 +152,13 @@
                     </p>
                     <div id="systemConfigInfo">
                         <div class="config-item">
+                            <span class="config-item-label">📍 Vault:</span>
+                            <span class="config-item-value" id="vaultDisplay">Loading...</span>
+                            <span style="font-size: 10px; color: var(--text-muted); margin-left: 5px;">(Read-Only)</span>
+                        </div>
+                        <div class="config-item">
                             <span class="config-item-label">📁 Database:</span>
+
                             <span class="config-item-value" id="configDbPath">Loading...</span>
                         </div>
                         <div class="config-item">

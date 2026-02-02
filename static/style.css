@@ -1019,6 +1019,7 @@ body {
     background: var(--border);
     border-radius: 4px;
     overflow: hidden;
+    position: relative;
 }
 
 .progress-bar {
@@ -1026,6 +1027,20 @@ body {
     background: var(--primary);
     width: 0%;
     transition: width 0.3s;
+}
+
+.progress-bar-container.indeterminate .progress-bar {
+    width: 100%;
+    position: absolute;
+    left: 0;
+    top: 0;
+    background: linear-gradient(90deg, transparent, var(--primary), transparent);
+    animation: progress-loading 1.5s infinite linear;
+}
+
+@keyframes progress-loading {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
 }
 
 .progress-file {
