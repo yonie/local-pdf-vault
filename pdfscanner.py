@@ -23,6 +23,8 @@ from datetime import datetime
 import re
 import sqlite3
 from contextlib import contextmanager
+from concurrent.futures import ThreadPoolExecutor
+
 
 try:
     import requests
@@ -54,11 +56,18 @@ class DatabaseManager:
                     document_type TEXT,
                     tags TEXT,
                     error TEXT,
-                    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    file_path TEXT,
+                    file_size INTEGER,
+                    mtime REAL
                 )
             ''')
+            
+            # Create index for faster path lookups
+            conn.execute('CREATE INDEX IF NOT EXISTS idx_file_path ON pdf_metadata(file_path)')
 
             # Create indexing status table
+
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS indexing_status (
                     id INTEGER PRIMARY KEY CHECK (id = 1),  -- Ensure only one row
@@ -109,8 +118,8 @@ class DatabaseManager:
             with self._get_connection() as conn:
                 conn.execute('''
                     INSERT OR REPLACE INTO pdf_metadata
-                    (file_hash, filename, subject, summary, date, sender, recipient, document_type, tags, error)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (file_hash, filename, subject, summary, date, sender, recipient, document_type, tags, error, file_path, file_size, mtime)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
                     metadata.get('file_hash'),
                     metadata.get('filename'),
@@ -121,14 +130,44 @@ class DatabaseManager:
                     metadata.get('recipient'),
                     metadata.get('document_type'),
                     json.dumps(metadata.get('tags', [])),
-                    metadata.get('error')
+                    metadata.get('error'),
+                    metadata.get('file_path'),
+                    metadata.get('file_size'),
+                    metadata.get('mtime')
                 ))
             return True
         except Exception as e:
             print(f"Error storing metadata: {e}")
             return False
 
+
+    def get_file_cache(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Retrieve a mapping of file_path -> {hash, size, mtime} for fast verification
+        Returns a dictionary where KEY=file_path, VALUE={hash, size, mtime}
+        """
+        try:
+            with self._get_connection() as conn:
+                # First check if columns exist (for safety)
+                cursor = conn.execute("PRAGMA table_info(pdf_metadata)")
+                cols = [row[1] for row in cursor.fetchall()]
+                
+                if 'file_path' not in cols:
+                    return {}
+
+                cursor = conn.execute('''
+                    SELECT file_path, file_hash, file_size, mtime FROM pdf_metadata WHERE file_path IS NOT NULL
+                ''')
+                cache = {}
+                for row in cursor.fetchall():
+                    cache[row[0]] = {'hash': row[1], 'size': row[2], 'mtime': row[3]}
+                return cache
+        except Exception as e:
+            print(f"Error retrieving file cache: {e}")
+            return {}
+
     def get_all_hashes(self) -> set:
+
         """Retrieve all known file hashes as a set for fast lookup"""
         try:
             with self._get_connection() as conn:
@@ -787,32 +826,55 @@ class PDFScanner:
         
         return {}
     
-    def scan_directory(self, directory: str, on_progress: Optional[Callable] = None) -> List[str]:
+    def scan_directory(self, directory: str, on_progress: Optional[Callable] = None) -> List[tuple]:
         """
-        Recursively scan directory for PDF files
+        High-performance parallel directory scan using os.scandir and ThreadPoolExecutor.
+        Returns a list of (path, size, mtime) tuples.
+        """
+        pdf_metadata = []
+        queue = [directory]
         
-        Args:
-            directory: Directory path to scan
-            on_progress: Optional callback function(current_path)
-            
-        Returns:
-            List of PDF file paths
-        """
-        pdf_files = []
+        # Increase max_workers to 128 to overcome I/O latency on virtualized mounts
+        max_workers = getattr(config, 'MAX_PARALLEL_SCANNING', 128)
+
+        def _scan_dir(path):
+            loc_pdf_info = []
+            loc_subdirs = []
+            try:
+                with os.scandir(path) as it:
+                    for entry in it:
+                        try:
+                            if entry.is_file() and entry.name.lower().endswith('.pdf'):
+                                st = entry.stat()
+                                loc_pdf_info.append((entry.path, st.st_size, st.st_mtime))
+                            elif entry.is_dir():
+                                loc_subdirs.append(entry.path)
+                        except OSError:
+                            continue # Skip inaccessible files/dirs
+            except OSError:
+                pass
+            return loc_pdf_info, loc_subdirs
+
         try:
-            for root, dirs, files in os.walk(directory):
-                if on_progress:
-                    on_progress(root)
-                for file in files:
-                    if file.lower().endswith('.pdf'):
-                        pdf_files.append(os.path.join(root, file))
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                while queue:
+                    if on_progress:
+                        on_progress(queue[0])
+                    
+                    # Process current batch of directories in parallel
+                    results = list(executor.map(_scan_dir, queue))
+                    queue = []
+                    for pdf_info, subdirs in results:
+                        pdf_metadata.extend(pdf_info)
+                        queue.extend(subdirs)
             
-            self.logger.info(f"Found {len(pdf_files)} PDF files in {directory}")
-            return pdf_files
+            self.logger.info(f"Parallel Scan found {len(pdf_metadata)} PDF files in {directory}")
+            return pdf_metadata
             
         except Exception as e:
             self.logger.error(f"Failed to scan directory {directory}: {e}")
             return []
+
 
     
     def process_pdf(self, file_path: str) -> Dict[str, Any]:
@@ -822,8 +884,14 @@ class PDFScanner:
         """
         self.logger.info(f"Processing: {file_path}")
         
+        # Get file stats for cache
+        st = os.stat(file_path)
+        
         result = {
-            "filename": file_path,
+            "filename": os.path.basename(file_path),
+            "file_path": file_path,
+            "file_size": st.st_size,
+            "mtime": st.st_mtime,
             "file_hash": "",
             "subject": "",
             "summary": "",
@@ -834,6 +902,7 @@ class PDFScanner:
             "tags": [],
             "error": None
         }
+
         
         try:
             # Generate file hash
@@ -886,18 +955,29 @@ class PDFScanner:
             return
 
         # Scan for PDF files
-        pdf_files = self.scan_directory(directory)
-        if not pdf_files:
+        pdf_entries = self.scan_directory(directory) # Returns list of (path, size, mtime)
+        if not pdf_entries:
             self.logger.warning(f"No PDF files found in {directory}")
             return
 
         success_count = 0
         skipped_count = 0
         error_count = 0
+        
+        # Get file cache for smart skipping
+        file_cache = self.db_manager.get_file_cache()
 
-        for pdf_file in pdf_files:
-            # Generate hash to check if already processed
+        for pdf_file, f_size, f_mtime in pdf_entries:
+            # Smart Cache Check
+            cached = file_cache.get(pdf_file)
+            if cached and cached['size'] == f_size and abs(cached['mtime'] - f_mtime) < 0.01:
+                self.logger.info(f"Skipping {pdf_file} - already processed (stat match)")
+                skipped_count += 1
+                continue
+
+            # Generate hash to check if already processed (hash match)
             file_hash = self.generate_file_hash(pdf_file)
+
             if not file_hash:
                 self.logger.error(f"Failed to generate hash for {pdf_file}")
                 error_count += 1

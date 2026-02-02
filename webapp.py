@@ -202,149 +202,115 @@ def reindex_document(file_hash):
     return jsonify({'success': True})
 
 def run_indexing(directory, force_reindex=False):
+    """
+    High-performance indexing pipeline with parallel hashing and throttled updates.
+    """
     try:
         scanner = PDFScanner(
             host=config.OLLAMA_HOST,
             port=config.OLLAMA_PORT,
             model=config.OLLAMA_MODEL
         )
-
-
-        # Test Ollama connection
+        
+        # 1. Test Ollama connection
         if not scanner.test_ollama_connection():
             with indexing_lock:
-                db.update_indexing_status({
-                    'is_running': False,
-                    'errors': 1
-                })
+                db.update_indexing_status({'is_running': False, 'errors': 1})
             return
 
-        print(f"Indexing started for {directory}")
-
+        # 2. Fast Parallel Directory Scan
         with indexing_lock:
-            db.update_indexing_status({
-                'current_file': 'Searching for PDF files...',
-                'total': 0,
-                'processed': 0
-            })
+            db.update_indexing_status({'current_file': 'Discovering files...'})
+        
+        pdf_entries = scanner.scan_directory(directory) # Now returns (path, size, mtime)
+        total_files = len(pdf_entries)
+        
+        # 3. Load known file cache for instant O(1) skip checks
+        # file_cache is { path: {hash, size, mtime} }
+        file_cache = db.get_file_cache()
+        
+        with indexing_lock:
+            db.update_indexing_status({'total': total_files, 'current_file': f'Syncing {total_files} files...'})
 
-        def scan_progress(current_path):
-            # Only update every few directories to avoid flooding the DB
-            # We can use a simple counter or just update with a limited frequency
-            # For now, let's just update the status with the current directory name
-            rel_path = os.path.relpath(current_path, directory)
-            display_path = f"Scanning: {rel_path}" if rel_path != "." else "Scanning root..."
+        # 4. Parallel Hashing & Processing Pipeline
+        import time
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        stop_event = threading.Event()
+        
+        def smart_hash_task(entry):
+            if stop_event.is_set(): return None, None, False
+            f_path, f_size, f_mtime = entry
             
-            # Use a non-blocking way to update if possible, but since we are in a thread it's fine
-            # We skip the lock here if we are careful, or just use it briefly
-            with indexing_lock:
-                db.update_indexing_status({'current_file': display_path})
+            # Smart Cache Check
+            cached = file_cache.get(f_path)
+            if cached and cached['size'] == f_size and abs(cached['mtime'] - f_mtime) < 0.01:
+                return f_path, cached['hash'], True
+            
+            # Cache miss or changed - perform real hash
+            return f_path, scanner.generate_file_hash(f_path), False
 
-        # Find all PDFs
-        pdf_files = scanner.scan_directory(directory, on_progress=scan_progress)
-        total_files = len(pdf_files)
-
-        # Optimization: Fetch all known hashes once into a set for O(1) lookup
-        known_hashes = db.get_all_hashes()
-
-        with indexing_lock:
-            db.update_indexing_status({
-                'total': total_files,
-                'current_file': f'Hashing {total_files} files (Parallel)...'
-            })
-
-        print(f"Hashing {total_files} files using {config.MAX_PARALLEL_HASHING} threads...")
-        
-        # Parallel Hashing Phase
-        # We pre-calculate hashes for all files in parallel to quickly filter out known ones
-        file_hash_map = {} # path -> hash
-        
-        def hash_file_task(f_path):
-            h = scanner.generate_file_hash(f_path)
-            return f_path, h
+        processed = 0
+        skipped = 0
+        errors = 0
+        last_ui_update = 0
 
         with ThreadPoolExecutor(max_workers=config.MAX_PARALLEL_HASHING) as executor:
-            hash_results = list(executor.map(hash_file_task, pdf_files))
-            for p, h in hash_results:
-                if h:
-                    file_hash_map[p] = h
-
-        print(f"Hashing complete. Filtering known files...")
-
-        # Processing Phase
-        for i, pdf_file in enumerate(pdf_files, 1):
-            # Check for stop request
-            with indexing_lock:
-                current_status = db.get_indexing_status()
-                if current_status['stop_requested']:
-                    print("Indexing stopped by user request")
-                    db.update_indexing_status({
-                        'is_running': False,
-                        'current_file': '',
-                        'stop_requested': False
-                    })
-                    return
-
-            filename = os.path.basename(pdf_file)
-            file_hash = file_hash_map.get(pdf_file)
-
-            if not file_hash:
-                print(f"Failed to generate hash for {filename}")
-                with indexing_lock:
-                    current_status = db.get_indexing_status()
-                    db.update_indexing_status({
-                        'errors': current_status['errors'] + 1,
-                        'processed': current_status['processed'] + 1
-                    })
-                continue
-
-            # Check if already exists
-            if file_hash in known_hashes and not force_reindex:
-                with indexing_lock:
-                    current_status = db.get_indexing_status()
-                    db.update_indexing_status({
-                        'skipped': current_status['skipped'] + 1,
-                        'processed': current_status['processed'] + 1,
-                        'current_file': filename
-                    })
-                continue
-
-            # If new or force re-index, process with AI (Serial)
-            print(f"AI Analyzing: {filename}")
-            with indexing_lock:
-                db.update_indexing_status({'current_file': f"🤖 Analyzing: {filename}"})
-
-            existing = db.get_metadata(file_hash)
-            if existing and force_reindex:
-                db.delete_metadata(file_hash)
-
-            result = scanner.process_pdf(pdf_file)
+            futures = {executor.submit(smart_hash_task, entry): entry for entry in pdf_entries}
             
-            if result.get('error') is None:
-                db.store_metadata(result)
-            else:
-                print(f"AI Failed for {filename}: {result.get('error')}")
+            for i, future in enumerate(as_completed(futures), 1):
+                # Check for Stop Request
                 with indexing_lock:
-                    current_status = db.get_indexing_status()
-                    db.update_indexing_status({'errors': current_status['errors'] + 1})
+                    if db.get_indexing_status()['stop_requested']:
+                        stop_event.set()
+                        db.update_indexing_status({'is_running': False, 'current_file': '', 'stop_requested': False})
+                        return
 
-            with indexing_lock:
-                current_status = db.get_indexing_status()
-                db.update_indexing_status({'processed': current_status['processed'] + 1})
+                f_path, f_hash, from_cache = future.result()
+                if not f_path or not f_hash or stop_event.is_set():
+                    if not stop_event.is_set() and f_path: errors += 1
+                    continue
 
+                filename = os.path.basename(f_path)
+                
+                if from_cache and not force_reindex:
+                    skipped += 1
+                else:
+                    # AI Analysis required (New or Changed File)
+                    print(f"AI Analyzing: {filename}")
+                    with indexing_lock:
+                        db.update_indexing_status({'current_file': f"🤖 Analyzing: {filename}"})
+                    
+                    # Process
+                    result = scanner.process_pdf(f_path)
+                    if result.get('error') is None:
+                        db.store_metadata(result)
+                        processed += 1
+                    else:
+                        errors += 1
 
-        print(f"Indexing completed: {db.get_indexing_status()['processed']} processed, {db.get_indexing_status()['skipped']} skipped, {db.get_indexing_status()['errors']} errors")
+                # Throttled UI Updates (every 500ms)
+                now = time.time()
+                if now - last_ui_update > 0.5 or i == total_files:
+                    with indexing_lock:
+                        db.update_indexing_status({
+                            'processed': skipped + processed + errors,
+                            'skipped': skipped,
+                            'errors': errors,
+                            'total': total_files,
+                            'current_file': filename if i < total_files else 'Sync complete'
+                        })
+                    last_ui_update = now
+
+        print(f"Indexing complete: {processed} new, {skipped} skipped, {errors} errors")
 
     except Exception as e:
         print(f"Indexing error: {e}")
     finally:
         with indexing_lock:
-            db.update_indexing_status({
-                'is_running': False,
-                'current_file': ''
-            })
+            db.update_indexing_status({'is_running': False, 'current_file': ''})
 
 def reindex_single(filename):
+
     try:
         scanner = PDFScanner(
             host=config.OLLAMA_HOST,

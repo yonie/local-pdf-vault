@@ -18,10 +18,12 @@ LocalPDFVault is a self-hosted "Vault" application that uses local AI vision mod
 - **Modern Search UI** - Clean, responsive design for all devices
 - **Instant Search** - Real-time fuzzy search with intelligent relevance ranking
 - **PDF Preview** - Built-in viewer with zoom, pan, and page navigation
-- **Update Index** - One-button update to keep your index in sync with your files
+- **Turbo Sync** - High-performance "Smart Sync" pipeline rescans 1,000+ files in < 2 seconds
+- **One-Button Update** - Keep your index in sync with your files with a single click
 - **Dark Mode** - Professional, eye-friendly interface
 
 ### 🤖 AI Intelligence
+- **Smart Sync Technology** - Uses parallel directory scanning and stat-based caching to detect changes instantly
 - **Vision Model Analysis** - "Reads" your PDFs using local Ollama models
 - **Smart Metadata** - Extracts subject, summary, dates, sender/recipient, and type
 - **Auto-Tagging** - Generates relevant categorization tags automatically
@@ -113,8 +115,9 @@ Configure these in `docker-compose.yml`:
 - `OLLAMA_HOST`: Set to `host.docker.internal` to reach your host's Ollama.
 - `OLLAMA_MODEL`: Which vision model to use.
 - `SCAN_DIRECTORY`: Internal path to scan (default: `/data/pdfs`).
-- `MAX_PAGES_PER_END`: How many pages to scan for large PDFs.
-- `MAX_PARALLEL_HASHING`: Number of parallel hashing jobs (default: `16`).
+- `MAX_PAGES_PER_END`: How many pages to scan for large PDFs (default: `3`).
+- `MAX_PARALLEL_HASHING`: Number of CPU workers for file hashing (default: `16`).
+- `MAX_PARALLEL_SCANNING`: Number of I/O workers for directory discovery (default: `128`).
 
 ---
 
