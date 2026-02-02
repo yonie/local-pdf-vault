@@ -10,7 +10,7 @@ WEB_PORT = int(os.getenv('WEB_PORT', 4337))    # Port for the web interface
 # Ollama Configuration
 OLLAMA_HOST = os.getenv('OLLAMA_HOST', 'localhost')  # Ollama server host
 OLLAMA_PORT = int(os.getenv('OLLAMA_PORT', 11434))     # Ollama server port
-OLLAMA_MODEL = os.getenv('OLLAMA_MODEL', 'qwen3-vl:30b-a3b-instruct-q4_K_M')  # Vision model to use
+OLLAMA_MODEL = os.getenv('OLLAMA_MODEL', 'qwen3-vl:30b-a3b-instruct')  # Vision model to use
 
 # PDF Processing Configuration
 SCAN_DIRECTORY = os.getenv('SCAN_DIRECTORY', '/data/pdfs')

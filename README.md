@@ -49,7 +49,23 @@ git clone https://github.com/yonie/local-pdf-vault.git
 cd local-pdf-vault
 
 # Download the AI vision model
-ollama pull qwen3-vl:30b-a3b-instruct-q4_K_M
+ollama pull qwen3-vl:30b-a3b-instruct
+```
+
+### 2. Configure your Vault
+
+Edit `docker-compose.yml` to point to your PDF collection. You must map your local folder to `/data/pdfs:ro` inside the container.
+
+**Examples for different Operating Systems:**
+
+- **Windows**: `- E:\Archief:/data/pdfs:ro` or `- C:\Users\Name\Documents:/data/pdfs:ro`
+- **macOS**: `- /Users/name/Documents/PDFs:/data/pdfs:ro`
+- **Linux**: `- /home/name/documents:/data/pdfs:ro` or `- /mnt/nas/archive:/data/pdfs:ro`
+
+```yaml
+    volumes:
+      - ./pdfscanner.db:/app/pdfscanner.db
+      - E:\Archief:/data/pdfs:ro  # Replace with your actual host path
 ```
 
 ### 2. Configure your Vault
@@ -102,7 +118,7 @@ Popular choices for the `OLLAMA_MODEL` environment variable:
 
 | Model | Size | Performance | Accuracy |
 |-------|------|-------------|----------|
-| `qwen3-vl:30b-a3b-instruct-q4_K_M` | ~17GB | Fast | Excellent ⭐ |
+| `qwen3-vl:30b-a3b-instruct` | ~17GB | Fast | Excellent ⭐ |
 | `llama3.2-vision:11b` | ~7GB | Very Fast | Good |
 | `llava:13b` | ~8GB | Fast | Good |
 

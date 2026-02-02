@@ -7,7 +7,7 @@ services:
     environment:
       - OLLAMA_HOST=host.docker.internal
       - OLLAMA_PORT=11434
-      - OLLAMA_MODEL=qwen3-vl:30b-a3b-instruct-q4_K_M
+      - OLLAMA_MODEL=qwen3-vl:30b-a3b-instruct
       - SCAN_DIRECTORY=/data/pdfs
       - MAX_PAGES_PER_END=3
     volumes:
