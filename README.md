@@ -68,23 +68,8 @@ Edit `docker-compose.yml` to point to your PDF collection. You must map your loc
       - E:\Archief:/data/pdfs:ro  # Replace with your actual host path
 ```
 
-### 2. Configure your Vault
-
-Edit `docker-compose.yml` to point to your PDF collection. You must map your local folder to `/data/pdfs:ro` inside the container.
-
-**Examples for different Operating Systems:**
-
-- **Windows**: `- E:\Archief:/data/pdfs:ro` or `- C:\Users\Name\Documents:/data/pdfs:ro`
-- **macOS**: `- /Users/name/Documents/PDFs:/data/pdfs:ro`
-- **Linux**: `- /home/name/documents:/data/pdfs:ro` or `- /mnt/nas/archive:/data/pdfs:ro`
-
-```yaml
-    volumes:
-      - ./pdfscanner.db:/app/pdfscanner.db
-      - E:\Archief:/data/pdfs:ro  # Replace with your actual host path
-```
-
 ### 3. Launch
+
 
 ```bash
 docker-compose up -d
@@ -129,6 +114,7 @@ Configure these in `docker-compose.yml`:
 - `OLLAMA_MODEL`: Which vision model to use.
 - `SCAN_DIRECTORY`: Internal path to scan (default: `/data/pdfs`).
 - `MAX_PAGES_PER_END`: How many pages to scan for large PDFs.
+- `MAX_PARALLEL_HASHING`: Number of parallel hashing jobs (default: `16`).
 
 ---
 

@@ -13,8 +13,10 @@ from flask import Flask, request, jsonify, send_file, render_template, Response
 import os
 import threading
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from pdfscanner import DatabaseManager, PDFScanner
 import config
+
 
 app = Flask(__name__)
 db = DatabaseManager()
@@ -247,13 +249,31 @@ def run_indexing(directory, force_reindex=False):
 
         with indexing_lock:
             db.update_indexing_status({
-                'total': total_files
+                'total': total_files,
+                'current_file': f'Hashing {total_files} files (Parallel)...'
             })
 
-        print(f"Starting indexing of {total_files} PDF files from {directory} ({len(known_hashes)} already indexed)")
+        print(f"Hashing {total_files} files using {config.MAX_PARALLEL_HASHING} threads...")
+        
+        # Parallel Hashing Phase
+        # We pre-calculate hashes for all files in parallel to quickly filter out known ones
+        file_hash_map = {} # path -> hash
+        
+        def hash_file_task(f_path):
+            h = scanner.generate_file_hash(f_path)
+            return f_path, h
 
+        with ThreadPoolExecutor(max_workers=config.MAX_PARALLEL_HASHING) as executor:
+            hash_results = list(executor.map(hash_file_task, pdf_files))
+            for p, h in hash_results:
+                if h:
+                    file_hash_map[p] = h
+
+        print(f"Hashing complete. Filtering known files...")
+
+        # Processing Phase
         for i, pdf_file in enumerate(pdf_files, 1):
-            # Check for stop request - fetch fresh status each time
+            # Check for stop request
             with indexing_lock:
                 current_status = db.get_indexing_status()
                 if current_status['stop_requested']:
@@ -266,19 +286,11 @@ def run_indexing(directory, force_reindex=False):
                     return
 
             filename = os.path.basename(pdf_file)
-            print(f"Checking file {i} of {total_files}: {filename}")
+            file_hash = file_hash_map.get(pdf_file)
 
-            with indexing_lock:
-                db.update_indexing_status({
-                    'current_file': filename
-                })
-
-            # Generate hash
-            file_hash = scanner.generate_file_hash(pdf_file)
             if not file_hash:
                 print(f"Failed to generate hash for {filename}")
                 with indexing_lock:
-                    # Fetch fresh status before incrementing
                     current_status = db.get_indexing_status()
                     db.update_indexing_status({
                         'errors': current_status['errors'] + 1,
@@ -286,58 +298,40 @@ def run_indexing(directory, force_reindex=False):
                     })
                 continue
 
-            # Check if already exists (skip if not force re-indexing)
+            # Check if already exists
             if file_hash in known_hashes and not force_reindex:
-                if i % 10 == 0 or i == total_files: # Reduce console noise for skipped files
-                    print(f"Skipping {filename} - already in index")
                 with indexing_lock:
-                    # Fetch fresh status before incrementing
                     current_status = db.get_indexing_status()
                     db.update_indexing_status({
                         'skipped': current_status['skipped'] + 1,
-                        'processed': current_status['processed'] + 1
+                        'processed': current_status['processed'] + 1,
+                        'current_file': filename
                     })
                 continue
 
-            # If force re-indexing or new file, process it
-            # (Note: we use a single DB call here only if the file is actually new)
+            # If new or force re-index, process with AI (Serial)
+            print(f"AI Analyzing: {filename}")
+            with indexing_lock:
+                db.update_indexing_status({'current_file': f"🤖 Analyzing: {filename}"})
+
             existing = db.get_metadata(file_hash)
             if existing and force_reindex:
                 db.delete_metadata(file_hash)
 
-
-            # Process
             result = scanner.process_pdf(pdf_file)
             
-            # Only store if vision analysis succeeded (no error)
             if result.get('error') is None:
-                if db.store_metadata(result):
-                    print(f"Successfully processed {filename}")
-                else:
-                    print(f"Failed to store metadata for {filename}")
-                    with indexing_lock:
-                        # Fetch fresh status before incrementing
-                        current_status = db.get_indexing_status()
-                        db.update_indexing_status({
-                            'errors': current_status['errors'] + 1
-                        })
+                db.store_metadata(result)
             else:
-                # Vision analysis failed - do not store, count as error for retry later
-                print(f"Vision analysis failed for {filename} - not indexed: {result.get('error')}")
+                print(f"AI Failed for {filename}: {result.get('error')}")
                 with indexing_lock:
-                    # Fetch fresh status before incrementing
                     current_status = db.get_indexing_status()
-                    db.update_indexing_status({
-                        'errors': current_status['errors'] + 1
-                    })
+                    db.update_indexing_status({'errors': current_status['errors'] + 1})
 
-            # Always increment processed counter
             with indexing_lock:
-                # Fetch fresh status before incrementing
                 current_status = db.get_indexing_status()
-                db.update_indexing_status({
-                    'processed': current_status['processed'] + 1
-                })
+                db.update_indexing_status({'processed': current_status['processed'] + 1})
+
 
         print(f"Indexing completed: {db.get_indexing_status()['processed']} processed, {db.get_indexing_status()['skipped']} skipped, {db.get_indexing_status()['errors']} errors")
 

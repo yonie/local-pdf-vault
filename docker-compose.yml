@@ -10,6 +10,7 @@ services:
       - OLLAMA_MODEL=qwen3-vl:30b-a3b-instruct
       - SCAN_DIRECTORY=/data/pdfs
       - MAX_PAGES_PER_END=3
+      - MAX_PARALLEL_HASHING=16
     volumes:
       - ./pdfscanner.db:/app/pdfscanner.db
       - E:\Archief:/data/pdfs:ro

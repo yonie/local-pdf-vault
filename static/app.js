@@ -421,7 +421,7 @@ async function checkIndexingStatus() {
                 const headerBtn = document.getElementById('headerIndexBtn');
                 if (headerBtn) {
                     headerBtn.disabled = true;
-                    headerBtn.innerHTML = '⏳';
+                    headerBtn.innerHTML = '⏳ Processing...';
                 }
             }
             
@@ -462,7 +462,7 @@ async function checkIndexingStatus() {
                 const headerBtn = document.getElementById('headerIndexBtn');
                 if (headerBtn) {
                     headerBtn.disabled = false;
-                    headerBtn.innerHTML = '🔄';
+                    headerBtn.innerHTML = '🔄 Update Index';
                 }
                 
                 document.getElementById('stopBtn').disabled = false;
@@ -516,7 +516,7 @@ async function startIndexing() {
     btn.innerHTML = '⏳ Initializing...';
     if (headerBtn) {
         headerBtn.disabled = true;
-        headerBtn.innerHTML = '⏳';
+        headerBtn.innerHTML = '⏳ Initializing...';
     }
 
     try {
@@ -537,7 +537,7 @@ async function startIndexing() {
             btn.innerHTML = '🔄 Update Index';
             if (headerBtn) {
                 headerBtn.disabled = false;
-                headerBtn.innerHTML = '🔄';
+                headerBtn.innerHTML = '🔄 Update Index';
             }
         }
     } catch (error) {
@@ -559,7 +559,7 @@ async function startReindexing() {
     btn.innerHTML = '⏳ Initializing...';
     if (headerBtn) {
         headerBtn.disabled = true;
-        headerBtn.innerHTML = '⏳';
+        headerBtn.innerHTML = '⏳ Initializing...';
     }
 
     try {
@@ -580,7 +580,7 @@ async function startReindexing() {
             btn.innerHTML = '🔄 Update Index';
             if (headerBtn) {
                 headerBtn.disabled = false;
-                headerBtn.innerHTML = '🔄';
+                headerBtn.innerHTML = '🔄 Update Index';
             }
         }
     } catch (error) {
