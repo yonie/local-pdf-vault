@@ -242,13 +242,15 @@ def run_indexing(directory, force_reindex=False):
         pdf_files = scanner.scan_directory(directory, on_progress=scan_progress)
         total_files = len(pdf_files)
 
+        # Optimization: Fetch all known hashes once into a set for O(1) lookup
+        known_hashes = db.get_all_hashes()
 
         with indexing_lock:
             db.update_indexing_status({
                 'total': total_files
             })
 
-        print(f"Starting indexing of {total_files} PDF files from {directory}")
+        print(f"Starting indexing of {total_files} PDF files from {directory} ({len(known_hashes)} already indexed)")
 
         for i, pdf_file in enumerate(pdf_files, 1):
             # Check for stop request - fetch fresh status each time
@@ -264,7 +266,7 @@ def run_indexing(directory, force_reindex=False):
                     return
 
             filename = os.path.basename(pdf_file)
-            print(f"Processing file {i} of {total_files}: {filename}")
+            print(f"Checking file {i} of {total_files}: {filename}")
 
             with indexing_lock:
                 db.update_indexing_status({
@@ -285,9 +287,9 @@ def run_indexing(directory, force_reindex=False):
                 continue
 
             # Check if already exists (skip if not force re-indexing)
-            existing = db.get_metadata(file_hash)
-            if existing and not force_reindex:
-                print(f"Skipping {filename} - already processed")
+            if file_hash in known_hashes and not force_reindex:
+                if i % 10 == 0 or i == total_files: # Reduce console noise for skipped files
+                    print(f"Skipping {filename} - already in index")
                 with indexing_lock:
                     # Fetch fresh status before incrementing
                     current_status = db.get_indexing_status()
@@ -297,9 +299,12 @@ def run_indexing(directory, force_reindex=False):
                     })
                 continue
 
-            # If force re-indexing, delete existing entry first
+            # If force re-indexing or new file, process it
+            # (Note: we use a single DB call here only if the file is actually new)
+            existing = db.get_metadata(file_hash)
             if existing and force_reindex:
                 db.delete_metadata(file_hash)
+
 
             # Process
             result = scanner.process_pdf(pdf_file)

@@ -128,7 +128,18 @@ class DatabaseManager:
             print(f"Error storing metadata: {e}")
             return False
 
+    def get_all_hashes(self) -> set:
+        """Retrieve all known file hashes as a set for fast lookup"""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.execute('SELECT file_hash FROM pdf_metadata')
+                return {row[0] for row in cursor.fetchall()}
+        except Exception as e:
+            print(f"Error retrieving hashes: {e}")
+            return set()
+
     def get_metadata(self, file_hash: str) -> Optional[Dict[str, Any]]:
+
         """
         Retrieve metadata by file hash
 
@@ -597,7 +608,7 @@ class PDFScanner:
     
     def generate_file_hash(self, file_path: str) -> str:
         """
-        Generate SHA-256 hash of a file
+        Generate SHA-256 hash of a file using a large buffer for speed
         
         Args:
             file_path: Path to the file
@@ -607,13 +618,15 @@ class PDFScanner:
         """
         hash_sha256 = hashlib.sha256()
         try:
+            # Using 1MB chunks is much faster for modern hardware/SSDs
             with open(file_path, "rb") as f:
-                for chunk in iter(lambda: f.read(4096), b""):
+                for chunk in iter(lambda: f.read(1024 * 1024), b""):
                     hash_sha256.update(chunk)
             return hash_sha256.hexdigest()
         except Exception as e:
             self.logger.error(f"Failed to generate hash for {file_path}: {e}")
             return ""
+
     
     
     def extract_pdf_metadata(self, file_path: str) -> Dict[str, Any]:

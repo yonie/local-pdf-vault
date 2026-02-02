@@ -411,8 +411,18 @@ async function checkIndexingStatus() {
             if (document.getElementById('indexProgress').style.display !== 'block') {
                 document.getElementById('indexProgress').style.display = 'block';
                 document.getElementById('stopBtn').style.display = 'inline-block';
-                document.getElementById('indexBtn').disabled = true;
-                document.getElementById('indexBtn').innerHTML = '⏳ Processing...';
+                
+                // Disable and update main button
+                const indexBtn = document.getElementById('indexBtn');
+                indexBtn.disabled = true;
+                indexBtn.innerHTML = '⏳ Processing...';
+                
+                // Disable and update header button
+                const headerBtn = document.getElementById('headerIndexBtn');
+                if (headerBtn) {
+                    headerBtn.disabled = true;
+                    headerBtn.innerHTML = '⏳';
+                }
             }
             
             // Update progress details
@@ -442,8 +452,19 @@ async function checkIndexingStatus() {
             if (document.getElementById('indexProgress').style.display === 'block') {
                 document.getElementById('indexProgress').style.display = 'none';
                 document.getElementById('stopBtn').style.display = 'none';
-                document.getElementById('indexBtn').disabled = false;
-                document.getElementById('indexBtn').innerHTML = '🔄 Update Index';
+                
+                // Reset main button
+                const indexBtn = document.getElementById('indexBtn');
+                indexBtn.disabled = false;
+                indexBtn.innerHTML = '🔄 Update Index';
+                
+                // Reset header button
+                const headerBtn = document.getElementById('headerIndexBtn');
+                if (headerBtn) {
+                    headerBtn.disabled = false;
+                    headerBtn.innerHTML = '🔄';
+                }
+                
                 document.getElementById('stopBtn').disabled = false;
                 document.getElementById('stopBtn').innerHTML = 'Stop';
                 
@@ -489,8 +510,14 @@ let indexingInterval = null;
 
 async function startIndexing() {
     const btn = document.getElementById('indexBtn');
+    const headerBtn = document.getElementById('headerIndexBtn');
+    
     btn.disabled = true;
     btn.innerHTML = '⏳ Initializing...';
+    if (headerBtn) {
+        headerBtn.disabled = true;
+        headerBtn.innerHTML = '⏳';
+    }
 
     try {
         const response = await fetch('/api/index', {
@@ -508,18 +535,32 @@ async function startIndexing() {
             alert('Error: ' + result.error);
             btn.disabled = false;
             btn.innerHTML = '🔄 Update Index';
+            if (headerBtn) {
+                headerBtn.disabled = false;
+                headerBtn.innerHTML = '🔄';
+            }
         }
     } catch (error) {
         alert('Error starting indexing: ' + error);
         btn.disabled = false;
         btn.innerHTML = '🔄 Update Index';
+        if (headerBtn) {
+            headerBtn.disabled = false;
+            headerBtn.innerHTML = '🔄';
+        }
     }
 }
 
 async function startReindexing() {
     const btn = document.getElementById('indexBtn');
+    const headerBtn = document.getElementById('headerIndexBtn');
+    
     btn.disabled = true;
     btn.innerHTML = '⏳ Initializing...';
+    if (headerBtn) {
+        headerBtn.disabled = true;
+        headerBtn.innerHTML = '⏳';
+    }
 
     try {
         const response = await fetch('/api/index', {
@@ -537,11 +578,19 @@ async function startReindexing() {
             alert('Error: ' + result.error);
             btn.disabled = false;
             btn.innerHTML = '🔄 Update Index';
+            if (headerBtn) {
+                headerBtn.disabled = false;
+                headerBtn.innerHTML = '🔄';
+            }
         }
     } catch (error) {
         alert('Error starting analysis: ' + error);
         btn.disabled = false;
         btn.innerHTML = '🔄 Update Index';
+        if (headerBtn) {
+            headerBtn.disabled = false;
+            headerBtn.innerHTML = '🔄';
+        }
     }
 }
 
