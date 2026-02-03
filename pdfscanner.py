@@ -767,17 +767,25 @@ class PDFScanner:
                 self.logger.debug(f"Extracted JSON using greedy fallback for {file_path}")
                 return self._validate_and_fix_metadata(metadata)
             except json.JSONDecodeError as e:
-                # Log detailed error with response snippet
-                snippet = response_text[:500] + ('...' if len(response_text) > 500 else '')
+                # Log detailed error with response snippet (show more context)
+                snippet = response_text[:1000] + ('...' if len(response_text) > 1000 else '')
                 self.logger.error(f"All JSON extraction strategies failed for {file_path}")
                 self.logger.error(f"JSON parse error: {e}")
-                self.logger.error(f"Response snippet: {snippet}")
+                self.logger.error(f"Response snippet (first 1000 chars): {snippet}")
+                self.logger.error(f"Response length: {len(response_text)} chars")
                 return None
         
         # No JSON found at all
-        snippet = response_text[:500] + ('...' if len(response_text) > 500 else '')
+        snippet = response_text[:1000] + ('...' if len(response_text) > 1000 else '')
         self.logger.error(f"No JSON structure found in response for {file_path}")
-        self.logger.error(f"Response snippet: {snippet}")
+        self.logger.error(f"Response snippet (first 1000 chars): {snippet}")
+        self.logger.error(f"Response length: {len(response_text)} chars")
+        
+        # Check if response appears to be truncated JSON
+        if response_text.strip().startswith('{') and not response_text.strip().endswith('}'):
+            self.logger.error(f"Response appears to be truncated JSON (starts with {{ but doesn't end with }})")
+            self.logger.error(f"Consider increasing num_predict in Ollama options")
+        
         return None
     
     def _validate_and_fix_metadata(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
@@ -898,7 +906,7 @@ class PDFScanner:
                 "options": {
                     "temperature": 0.1,
                     "top_p": 0.9,
-                    "num_predict": 1000  # Limit response length
+                    "num_predict": 2000  # Increased to prevent JSON truncation
                 }
             }
             
