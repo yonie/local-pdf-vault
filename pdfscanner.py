@@ -863,6 +863,7 @@ class PDFScanner:
                 else:
                     pages_to_scan = list(range(max_pages_per_end)) + list(range(total_pages - max_pages_per_end, total_pages))
                 strategy = "first and last pages"
+                zoom = 2.5
             elif retry_attempt == 1:
                 # Second attempt: scan middle pages
                 if total_pages <= 6:
@@ -872,6 +873,7 @@ class PDFScanner:
                     middle_end = middle_start + max_pages_per_end
                     pages_to_scan = list(range(middle_start, middle_end))
                 strategy = "middle pages"
+                zoom = 2.5
             elif retry_attempt == 2:
                 # Third attempt: scan evenly distributed pages across document
                 if total_pages <= 6:
@@ -880,18 +882,20 @@ class PDFScanner:
                     step = max(1, total_pages // 6)
                     pages_to_scan = list(range(0, total_pages, step))[:6]
                 strategy = "evenly distributed pages"
+                zoom = 2.5
             else:
-                # Final attempt: scan first 6 pages only as last resort
-                pages_to_scan = list(range(min(6, total_pages)))
-                strategy = "first 6 pages (final attempt)"
+                # Final attempt: scan just first page in VERY high resolution
+                pages_to_scan = [0]
+                strategy = "first page only (high resolution)"
+                zoom = 3.5  # Higher quality for better OCR
 
             self.logger.info(f"Attempt {retry_attempt + 1}: Scanning {len(pages_to_scan)} of {total_pages} pages ({strategy}) for {file_path}")
             
             image_data_list = []
             for page_num in pages_to_scan:
                 page = doc.load_page(page_num)
-                # Higher quality for better text recognition
-                pix = page.get_pixmap(matrix=fitz.Matrix(2.5, 2.5))  # 2.5x zoom for good quality
+                # Use variable zoom level based on retry strategy
+                pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
                 image_data_list.append(pix.tobytes("png"))
             
             doc.close()
@@ -924,12 +928,15 @@ class PDFScanner:
             Return ONLY the JSON object, nothing else."""
             
             # Call Ollama API with multiple images if available
+            # Increase temperature on retries to help with stuck/repetitive outputs
+            temperature = 0.1 + (retry_attempt * 0.05)  # 0.1, 0.15, 0.2, 0.25 for attempts 0-3
+            
             payload = {
                 "model": self.model,
                 "prompt": prompt,
                 "stream": False,
                 "options": {
-                    "temperature": 0.1,
+                    "temperature": min(temperature, 0.3),  # Cap at 0.3 to maintain quality
                     "top_p": 0.9,
                     "num_predict": 4096,  # Reasonable limit for structured JSON output
                     "num_ctx": 8192,      # Set context window explicitly
@@ -957,6 +964,17 @@ class PDFScanner:
                 if 'response' in result:
                     metadata_text = result['response'].strip()
                     
+                    # Check for problematic responses before attempting extraction
+                    if not metadata_text:
+                        self.logger.warning(f"Empty response from Ollama (attempt {retry_attempt + 1}) - will retry with different pages")
+                        return {}
+                    elif len(metadata_text) < 50:
+                        self.logger.warning(f"Suspiciously short response ({len(metadata_text)} chars, attempt {retry_attempt + 1}): {metadata_text[:100]}")
+                        return {}
+                    elif metadata_text.count('{') == 0:
+                        self.logger.warning(f"Response contains no JSON structure (attempt {retry_attempt + 1}) - will retry")
+                        return {}
+                    
                     # Use robust JSON extraction with multiple strategies
                     metadata = self._extract_json_from_response(metadata_text, file_path)
                     
@@ -964,7 +982,7 @@ class PDFScanner:
                         self.logger.info(f"Successfully extracted metadata for {file_path} (attempt {retry_attempt + 1})")
                         return metadata
                     else:
-                        self.logger.error(f"Failed to extract valid JSON from response for {file_path} (attempt {retry_attempt + 1})")
+                        self.logger.warning(f"Failed to parse JSON from response (attempt {retry_attempt + 1}) - will retry with different pages")
                         return {}
                 else:
                     self.logger.error(f"No 'response' field in Ollama API result for {file_path} (attempt {retry_attempt + 1})")
