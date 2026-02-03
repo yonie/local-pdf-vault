@@ -699,6 +699,130 @@ class PDFScanner:
             self.logger.error(f"Failed to extract PDF metadata from {file_path}: {e}")
             return {}
     
+    def _extract_json_from_response(self, response_text: str, file_path: str) -> Optional[Dict[str, Any]]:
+        """
+        Robust JSON extraction with multiple strategies to handle various response formats.
+        
+        Args:
+            response_text: Raw response text from Ollama
+            file_path: Path to the PDF file (for logging)
+            
+        Returns:
+            Extracted and validated metadata dictionary, or None if extraction fails
+        """
+        if not response_text:
+            self.logger.warning(f"Empty response for {file_path}")
+            return None
+        
+        # Strategy 1: Try to extract JSON from markdown code blocks (```json ... ```)
+        markdown_patterns = [
+            r'```(?:json)?\s*(\{[^`]+\})\s*```',  # ```json {...} ```
+            r'```\s*(\{[^`]+\})\s*```',            # ``` {...} ```
+        ]
+        
+        for pattern in markdown_patterns:
+            match = re.search(pattern, response_text, re.DOTALL)
+            if match:
+                try:
+                    metadata = json.loads(match.group(1))
+                    self.logger.debug(f"Extracted JSON from markdown code block for {file_path}")
+                    return self._validate_and_fix_metadata(metadata)
+                except json.JSONDecodeError:
+                    continue
+        
+        # Strategy 2: Find the last complete JSON object (often the final/corrected attempt)
+        # Use non-greedy matching with balanced braces
+        json_objects = []
+        brace_depth = 0
+        json_start = -1
+        
+        for i, char in enumerate(response_text):
+            if char == '{':
+                if brace_depth == 0:
+                    json_start = i
+                brace_depth += 1
+            elif char == '}':
+                brace_depth -= 1
+                if brace_depth == 0 and json_start >= 0:
+                    # Found a complete JSON object
+                    json_candidate = response_text[json_start:i+1]
+                    json_objects.append(json_candidate)
+                    json_start = -1
+        
+        # Try each found JSON object, starting from the last one
+        for json_str in reversed(json_objects):
+            try:
+                metadata = json.loads(json_str)
+                if isinstance(metadata, dict) and len(metadata) > 0:
+                    self.logger.debug(f"Extracted JSON using balanced brace matching for {file_path}")
+                    return self._validate_and_fix_metadata(metadata)
+            except json.JSONDecodeError:
+                continue
+        
+        # Strategy 3: Try the original greedy approach as final fallback
+        json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+        if json_match:
+            try:
+                metadata = json.loads(json_match.group())
+                self.logger.debug(f"Extracted JSON using greedy fallback for {file_path}")
+                return self._validate_and_fix_metadata(metadata)
+            except json.JSONDecodeError as e:
+                # Log detailed error with response snippet
+                snippet = response_text[:500] + ('...' if len(response_text) > 500 else '')
+                self.logger.error(f"All JSON extraction strategies failed for {file_path}")
+                self.logger.error(f"JSON parse error: {e}")
+                self.logger.error(f"Response snippet: {snippet}")
+                return None
+        
+        # No JSON found at all
+        snippet = response_text[:500] + ('...' if len(response_text) > 500 else '')
+        self.logger.error(f"No JSON structure found in response for {file_path}")
+        self.logger.error(f"Response snippet: {snippet}")
+        return None
+    
+    def _validate_and_fix_metadata(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Validate and fix metadata structure to ensure all required fields exist
+        and have correct types.
+        
+        Args:
+            metadata: Raw metadata dictionary from JSON parsing
+            
+        Returns:
+            Validated and fixed metadata dictionary
+        """
+        required_fields = {
+            "filename": "",
+            "subject": "",
+            "summary": "",
+            "date": "",
+            "sender": "",
+            "recipient": "",
+            "document_type": "",
+            "tags": []
+        }
+        
+        # Ensure all required fields exist with correct types
+        for field, default_value in required_fields.items():
+            if field not in metadata:
+                metadata[field] = default_value
+                self.logger.debug(f"Added missing field '{field}' with default value")
+            elif field == "tags":
+                # Ensure tags is a list
+                if not isinstance(metadata[field], list):
+                    if isinstance(metadata[field], str):
+                        # Try to convert comma-separated string to list
+                        metadata[field] = [tag.strip() for tag in metadata[field].split(',') if tag.strip()]
+                    else:
+                        metadata[field] = []
+                    self.logger.debug(f"Converted tags field to list")
+            else:
+                # Ensure string fields are actually strings
+                if not isinstance(metadata[field], str):
+                    metadata[field] = str(metadata[field]) if metadata[field] is not None else ""
+        
+        return metadata
+
     def ollama_vision_analysis(self, file_path: str) -> Dict[str, Any]:
         """
         Use Ollama vision model to analyze PDF and extract metadata
@@ -741,25 +865,30 @@ class PDFScanner:
             doc.close()
             
             # Enhanced prompt for comprehensive metadata extraction with tags
+            # Emphasize JSON-only response to reduce parsing errors
             prompt = f"""Analyze this PDF document and extract metadata in JSON format. 
-            
+
             Document: {os.path.basename(file_path)}
             
-            Extract and return only a JSON object with these fields:
-            - filename: "{os.path.basename(file_path)}"
-            - subject: "document title or main topic (in Dutch or English)"
-            - summary: "brief 2-3 sentence summary of the content"
-            - date: "document date in YYYY-MM-DD format if visible, otherwise empty string"
-            - sender: "sender/from information (person, company, or organization)"
-            - recipient: "recipient/to information (person, company, or organization)"
-            - document_type: "type of document (invoice, contract, letter, report, deed, legal document, etc.)"
-            - tags: ["relevant", "categorization", "keywords", "for", "this", "document"]
+            CRITICAL: Respond with ONLY a valid JSON object. Do not include any explanations, markdown formatting, or additional text.
+            
+            Required JSON structure:
+            {{
+              "filename": "{os.path.basename(file_path)}",
+              "subject": "document title or main topic (in Dutch or English)",
+              "summary": "brief 2-3 sentence summary of the content",
+              "date": "document date in YYYY-MM-DD format if visible, otherwise empty string",
+              "sender": "sender/from information (person, company, or organization)",
+              "recipient": "recipient/to information (person, company, or organization)",
+              "document_type": "type of document (invoice, contract, letter, report, deed, legal document, etc.)",
+              "tags": ["relevant", "categorization", "keywords", "for", "this", "document"]
+            }}
             
             Look for dates, names, addresses, official seals, document types, and any other identifying information.
             Use your vision capabilities to read and understand the document content.
             Suggest helpful tags that would categorize this document for easy searching and organization.
             
-            Respond with only valid JSON, no additional text."""
+            Return ONLY the JSON object, nothing else."""
             
             # Call Ollama API with multiple images if available
             payload = {
@@ -790,31 +919,25 @@ class PDFScanner:
             
             if response.status_code == 200:
                 result = response.json()
-                try:
-                    if 'response' in result:
-                        metadata_text = result['response'].strip()
-                        # Clean up the response to extract JSON
-                        json_match = re.search(r'\{.*\}', metadata_text, re.DOTALL)
-                        if json_match:
-                            metadata = json.loads(json_match.group())
-                            # Ensure all required fields exist
-                            required_fields = ["filename", "subject", "summary", "date", "sender", "recipient", "document_type", "tags"]
-                            for field in required_fields:
-                                if field not in metadata:
-                                    if field == "tags":
-                                        metadata[field] = []
-                                    else:
-                                        metadata[field] = ""
-                            return metadata
-                        else:
-                            self.logger.warning("No JSON found in Ollama response")
-                            return {}
-                except json.JSONDecodeError as e:
-                    self.logger.warning(f"Failed to parse Ollama response as JSON: {e}")
-                    self.logger.debug(f"Raw response: {metadata_text}")
+                if 'response' in result:
+                    metadata_text = result['response'].strip()
+                    
+                    # Use robust JSON extraction with multiple strategies
+                    metadata = self._extract_json_from_response(metadata_text, file_path)
+                    
+                    if metadata:
+                        self.logger.info(f"Successfully extracted metadata for {file_path}")
+                        return metadata
+                    else:
+                        self.logger.error(f"Failed to extract valid JSON from response for {file_path}")
+                        return {}
+                else:
+                    self.logger.error(f"No 'response' field in Ollama API result for {file_path}")
                     return {}
             else:
-                self.logger.error(f"Ollama API error: HTTP {response.status_code}")
+                self.logger.error(f"Ollama API error for {file_path}: HTTP {response.status_code}")
+                if response.text:
+                    self.logger.error(f"Response: {response.text[:500]}")
                 return {}
             
         except ImportError:
@@ -822,6 +945,8 @@ class PDFScanner:
             return {}
         except Exception as e:
             self.logger.error(f"Ollama vision analysis failed for {file_path}: {e}")
+            import traceback
+            self.logger.debug(f"Traceback: {traceback.format_exc()}")
             return {}
         
         return {}
