@@ -906,7 +906,9 @@ class PDFScanner:
                 "options": {
                     "temperature": 0.1,
                     "top_p": 0.9,
-                    "num_predict": 2000  # Increased to prevent JSON truncation
+                    "num_predict": 8192,  # Allow full context generation (we have 32GB VRAM)
+                    "num_ctx": 8192,      # Set context window explicitly
+                    "num_gpu": 999        # Use all available GPU layers
                 }
             }
             
