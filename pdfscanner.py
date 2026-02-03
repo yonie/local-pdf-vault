@@ -831,13 +831,14 @@ class PDFScanner:
         
         return metadata
 
-    def ollama_vision_analysis(self, file_path: str) -> Dict[str, Any]:
+    def ollama_vision_analysis(self, file_path: str, retry_attempt: int = 0) -> Dict[str, Any]:
         """
         Use Ollama vision model to analyze PDF and extract metadata
         The vision model analyzes the PDF directly through images - no text extraction needed
         
         Args:
             file_path: Path to the PDF file
+            retry_attempt: Current retry attempt number (0 = first attempt, 1 = first retry, etc.)
             
         Returns:
             Dictionary with analyzed metadata
@@ -850,18 +851,41 @@ class PDFScanner:
                 doc.close()
                 return {}
             
-            # Smart selective scanning - first N and last N pages
+            # Smart selective scanning with fallback strategies
             total_pages = doc.page_count
             max_pages_per_end = getattr(config, 'MAX_PAGES_PER_END', 3)
 
-            if max_pages_per_end == 0 or total_pages <= (max_pages_per_end * 2):
-                # Scan all pages (original behavior or small documents)
-                pages_to_scan = list(range(total_pages))
+            # Define different page selection strategies for retries
+            if retry_attempt == 0:
+                # First attempt: scan first N and last N pages (default strategy)
+                if max_pages_per_end == 0 or total_pages <= (max_pages_per_end * 2):
+                    pages_to_scan = list(range(total_pages))
+                else:
+                    pages_to_scan = list(range(max_pages_per_end)) + list(range(total_pages - max_pages_per_end, total_pages))
+                strategy = "first and last pages"
+            elif retry_attempt == 1:
+                # Second attempt: scan middle pages
+                if total_pages <= 6:
+                    pages_to_scan = list(range(total_pages))
+                else:
+                    middle_start = total_pages // 2 - max_pages_per_end // 2
+                    middle_end = middle_start + max_pages_per_end
+                    pages_to_scan = list(range(middle_start, middle_end))
+                strategy = "middle pages"
+            elif retry_attempt == 2:
+                # Third attempt: scan evenly distributed pages across document
+                if total_pages <= 6:
+                    pages_to_scan = list(range(total_pages))
+                else:
+                    step = max(1, total_pages // 6)
+                    pages_to_scan = list(range(0, total_pages, step))[:6]
+                strategy = "evenly distributed pages"
             else:
-                # Large document - scan first and last pages only
-                pages_to_scan = list(range(max_pages_per_end)) + list(range(total_pages - max_pages_per_end, total_pages))
+                # Final attempt: scan first 6 pages only as last resort
+                pages_to_scan = list(range(min(6, total_pages)))
+                strategy = "first 6 pages (final attempt)"
 
-            self.logger.info(f"Scanning {len(pages_to_scan)} of {total_pages} pages for {file_path}")
+            self.logger.info(f"Attempt {retry_attempt + 1}: Scanning {len(pages_to_scan)} of {total_pages} pages ({strategy}) for {file_path}")
             
             image_data_list = []
             for page_num in pages_to_scan:
@@ -937,16 +961,16 @@ class PDFScanner:
                     metadata = self._extract_json_from_response(metadata_text, file_path)
                     
                     if metadata:
-                        self.logger.info(f"Successfully extracted metadata for {file_path}")
+                        self.logger.info(f"Successfully extracted metadata for {file_path} (attempt {retry_attempt + 1})")
                         return metadata
                     else:
-                        self.logger.error(f"Failed to extract valid JSON from response for {file_path}")
+                        self.logger.error(f"Failed to extract valid JSON from response for {file_path} (attempt {retry_attempt + 1})")
                         return {}
                 else:
-                    self.logger.error(f"No 'response' field in Ollama API result for {file_path}")
+                    self.logger.error(f"No 'response' field in Ollama API result for {file_path} (attempt {retry_attempt + 1})")
                     return {}
             else:
-                self.logger.error(f"Ollama API error for {file_path}: HTTP {response.status_code}")
+                self.logger.error(f"Ollama API error for {file_path} (attempt {retry_attempt + 1}): HTTP {response.status_code}")
                 if response.text:
                     self.logger.error(f"Response: {response.text[:500]}")
                 return {}
@@ -955,7 +979,7 @@ class PDFScanner:
             self.logger.error("PyMuPDF (fitz) not found. Install with: pip install pymupdf")
             return {}
         except Exception as e:
-            self.logger.error(f"Ollama vision analysis failed for {file_path}: {e}")
+            self.logger.error(f"Ollama vision analysis failed for {file_path} (attempt {retry_attempt + 1}): {e}")
             import traceback
             self.logger.debug(f"Traceback: {traceback.format_exc()}")
             return {}
@@ -1017,6 +1041,7 @@ class PDFScanner:
         """
         Process a single PDF file and extract all metadata using vision model
         The vision model handles all heavy lifting - no text extraction needed
+        Implements retry logic with different page selection strategies on failure
         """
         self.logger.info(f"Processing: {file_path}")
         
@@ -1047,13 +1072,24 @@ class PDFScanner:
                 result["error"] = "Failed to generate file hash"
                 return result
             
-            # Use vision model as primary method - it analyzes the PDF images directly
-            ollama_metadata = self.ollama_vision_analysis(file_path)
+            # Use vision model with retry logic - try up to 4 different page selection strategies
+            max_retries = getattr(config, 'MAX_VISION_RETRIES', 3)
+            ollama_metadata = None
+            
+            for attempt in range(max_retries + 1):
+                ollama_metadata = self.ollama_vision_analysis(file_path, retry_attempt=attempt)
+                
+                if ollama_metadata:
+                    # Success! Break out of retry loop
+                    break
+                    
+                if attempt < max_retries:
+                    self.logger.warning(f"Retry {attempt + 1}/{max_retries} for {file_path} - trying different page selection strategy")
             
             # Vision analysis MUST succeed - no fallback allowed
             if not ollama_metadata:
-                result["error"] = "Vision analysis failed - document not indexed"
-                self.logger.error(f"Vision analysis failed for {file_path} - skipping indexing")
+                result["error"] = f"Vision analysis failed after {max_retries + 1} attempts - document not indexed"
+                self.logger.error(f"Vision analysis failed for {file_path} after all retry attempts - skipping indexing")
                 return result
             
             # Vision analysis succeeded, use those results
@@ -1100,49 +1136,70 @@ class PDFScanner:
         skipped_count = 0
         error_count = 0
         
-        # Get file cache for smart skipping
+        # Get file cache for smart skipping (avoids re-hashing unchanged files)
         file_cache = self.db_manager.get_file_cache()
+        
+        self.logger.info(f"Found {len(pdf_entries)} PDF files to check")
 
-        for pdf_file, f_size, f_mtime in pdf_entries:
-            # Smart Cache Check
+        for idx, (pdf_file, f_size, f_mtime) in enumerate(pdf_entries, 1):
+            self.logger.info(f"[{idx}/{len(pdf_entries)}] Checking {pdf_file}")
+            
+            # Skip Check #1: Fast file stat check (size + mtime)
+            # This avoids expensive hash computation for unchanged files
             cached = file_cache.get(pdf_file)
             if cached and cached['size'] == f_size and abs(cached['mtime'] - f_mtime) < 0.01:
-                self.logger.info(f"Skipping {pdf_file} - already processed (stat match)")
+                self.logger.info(f"✓ Skipped (unchanged file - stat match): {os.path.basename(pdf_file)}")
                 skipped_count += 1
                 continue
 
-            # Generate hash to check if already processed (hash match)
+            # Skip Check #2: Hash-based check for moved/renamed files
+            # Generate hash to check if content already indexed under different path
             file_hash = self.generate_file_hash(pdf_file)
 
             if not file_hash:
-                self.logger.error(f"Failed to generate hash for {pdf_file}")
+                self.logger.error(f"✗ Failed to generate hash: {os.path.basename(pdf_file)}")
                 error_count += 1
                 continue
 
-            # Check if already in database
+            # Check if this content hash already exists in database
             existing = self.db_manager.get_metadata(file_hash)
             if existing:
-                self.logger.info(f"Skipping {pdf_file} - already processed")
+                self.logger.info(f"✓ Skipped (already indexed - hash match): {os.path.basename(pdf_file)}")
                 skipped_count += 1
+                # Update the file path and stats in the database for future fast checks
+                existing.update({
+                    'file_path': pdf_file,
+                    'file_size': f_size,
+                    'mtime': f_mtime
+                })
+                self.db_manager.store_metadata(existing)
                 continue
 
-            # Process the PDF
+            # Not yet indexed - process the PDF
+            self.logger.info(f"→ Processing new document: {os.path.basename(pdf_file)}")
             result = self.process_pdf(pdf_file)
             
             # Only store in database if vision analysis succeeded (no error)
             if result.get("error") is None:
                 if self.db_manager.store_metadata(result):
+                    self.logger.info(f"✓ Successfully indexed: {os.path.basename(pdf_file)}")
                     success_count += 1
                 else:
-                    self.logger.error(f"Failed to store metadata for {pdf_file}")
+                    self.logger.error(f"✗ Failed to store metadata: {os.path.basename(pdf_file)}")
                     error_count += 1
             else:
                 # Vision analysis failed - do not store, count as error for retry later
-                self.logger.warning(f"Skipping storage for {pdf_file} - vision analysis failed")
+                self.logger.warning(f"✗ Vision analysis failed (will retry next scan): {os.path.basename(pdf_file)}")
                 error_count += 1
 
-        # Log final summary
-        self.logger.info(f"Processing complete: {success_count} successful, {skipped_count} skipped, {error_count} errors")
+        # Log final summary with clear statistics
+        self.logger.info("=" * 60)
+        self.logger.info(f"SCAN COMPLETE")
+        self.logger.info(f"Total PDFs found: {len(pdf_entries)}")
+        self.logger.info(f"Successfully indexed: {success_count}")
+        self.logger.info(f"Skipped (already indexed): {skipped_count}")
+        self.logger.info(f"Failed/Errors: {error_count}")
+        self.logger.info("=" * 60)
     
 
 
