@@ -889,12 +889,13 @@ class PDFScanner:
               "sender": "sender/from information (person, company, or organization)",
               "recipient": "recipient/to information (person, company, or organization)",
               "document_type": "type of document (invoice, contract, letter, report, deed, legal document, etc.)",
-              "tags": ["relevant", "categorization", "keywords", "for", "this", "document"]
+              "tags": ["max", "5-10", "relevant", "tags"]
             }}
+            
+            IMPORTANT: Limit tags to 5-10 most relevant keywords only. Keep the summary concise (2-3 sentences max).
             
             Look for dates, names, addresses, official seals, document types, and any other identifying information.
             Use your vision capabilities to read and understand the document content.
-            Suggest helpful tags that would categorize this document for easy searching and organization.
             
             Return ONLY the JSON object, nothing else."""
             
@@ -906,7 +907,7 @@ class PDFScanner:
                 "options": {
                     "temperature": 0.1,
                     "top_p": 0.9,
-                    "num_predict": 8192,  # Allow full context generation (we have 32GB VRAM)
+                    "num_predict": 4096,  # Reasonable limit for structured JSON output
                     "num_ctx": 8192,      # Set context window explicitly
                     "num_gpu": 999        # Use all available GPU layers
                 }
