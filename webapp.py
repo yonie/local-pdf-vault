@@ -43,8 +43,9 @@ def search():
 @app.route('/api/pdf/<file_hash>')
 def serve_pdf(file_hash):
     metadata = db.get_metadata(file_hash)
-    if metadata and metadata['filename'] and os.path.exists(metadata['filename']):
-        with open(metadata['filename'], 'rb') as f:
+    file_path = metadata.get('file_path') or metadata.get('filename')
+    if metadata and file_path and os.path.exists(file_path):
+        with open(file_path, 'rb') as f:
             pdf_data = f.read()
         response = Response(pdf_data, mimetype='application/pdf')
         response.headers['Content-Disposition'] = 'inline'
