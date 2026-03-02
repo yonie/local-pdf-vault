@@ -204,7 +204,10 @@ class DatabaseManager:
                         'document_type': row[7],
                         'tags': json.loads(row[8]) if row[8] else [],
                         'error': row[9],
-                        'last_updated': row[10]
+                        'last_updated': row[10],
+                        'file_path': row[11],
+                        'file_size': row[12],
+                        'mtime': row[13]
                     }
         except Exception as e:
             print(f"Error retrieving metadata: {e}")
@@ -254,7 +257,10 @@ class DatabaseManager:
                         'document_type': row[7] or '',
                         'tags': json.loads(row[8]) if row[8] else [],
                         'error': row[9],
-                        'last_updated': row[10]
+                        'last_updated': row[10],
+                        'file_path': row[11],
+                        'file_size': row[12],
+                        'mtime': row[13]
                     }
                     all_docs.append(metadata)
 
@@ -434,7 +440,10 @@ class DatabaseManager:
                         'document_type': row[7],
                         'tags': json.loads(row[8]) if row[8] else [],
                         'error': row[9],
-                        'last_updated': row[10]
+                        'last_updated': row[10],
+                        'file_path': row[11],
+                        'file_size': row[12],
+                        'mtime': row[13]
                     })
                 return results
         except Exception as e:
