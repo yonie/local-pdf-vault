@@ -80,6 +80,7 @@ class DatabaseManager:
                     recipient TEXT,
                     document_type TEXT,
                     tags TEXT,
+                    full_text TEXT,
                     error TEXT,
                     last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     file_path TEXT,
@@ -88,7 +89,7 @@ class DatabaseManager:
                 )
             ''')
             
-            # Create FTS5 virtual table for full-text search
+            # Create FTS5 virtual table for full-text search (includes full_text)
             conn.execute('''
                 CREATE VIRTUAL TABLE IF NOT EXISTS pdf_search USING fts5(
                     file_hash,
@@ -99,6 +100,7 @@ class DatabaseManager:
                     recipient,
                     document_type,
                     tags,
+                    full_text,
                     content='pdf_metadata',
                     content_rowid='rowid',
                     tokenize='unicode61'
@@ -109,8 +111,8 @@ class DatabaseManager:
             conn.execute('''
                 CREATE TRIGGER IF NOT EXISTS pdf_search_insert AFTER INSERT ON pdf_metadata
                 BEGIN
-                    INSERT INTO pdf_search(rowid, file_hash, filename, subject, summary, sender, recipient, document_type, tags)
-                    VALUES (NEW.rowid, NEW.file_hash, NEW.filename, NEW.subject, NEW.summary, NEW.sender, NEW.recipient, NEW.document_type, NEW.tags);
+                    INSERT INTO pdf_search(rowid, file_hash, filename, subject, summary, sender, recipient, document_type, tags, full_text)
+                    VALUES (NEW.rowid, NEW.file_hash, NEW.filename, NEW.subject, NEW.summary, NEW.sender, NEW.recipient, NEW.document_type, NEW.tags, NEW.full_text);
                 END
             ''')
             
@@ -125,8 +127,8 @@ class DatabaseManager:
                 CREATE TRIGGER IF NOT EXISTS pdf_search_update AFTER UPDATE ON pdf_metadata
                 BEGIN
                     DELETE FROM pdf_search WHERE rowid = OLD.rowid;
-                    INSERT INTO pdf_search(rowid, file_hash, filename, subject, summary, sender, recipient, document_type, tags)
-                    VALUES (NEW.rowid, NEW.file_hash, NEW.filename, NEW.subject, NEW.summary, NEW.sender, NEW.recipient, NEW.document_type, NEW.tags);
+                    INSERT INTO pdf_search(rowid, file_hash, filename, subject, summary, sender, recipient, document_type, tags, full_text)
+                    VALUES (NEW.rowid, NEW.file_hash, NEW.filename, NEW.subject, NEW.summary, NEW.sender, NEW.recipient, NEW.document_type, NEW.tags, NEW.full_text);
                 END
             ''')
             
@@ -213,8 +215,8 @@ class DatabaseManager:
             with self._transaction() as conn:
                 conn.execute('''
                     INSERT OR REPLACE INTO pdf_metadata
-                    (file_hash, filename, subject, summary, date, sender, recipient, document_type, tags, error, file_path, file_size, mtime)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (file_hash, filename, subject, summary, date, sender, recipient, document_type, tags, full_text, error, file_path, file_size, mtime)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
                     metadata.get('file_hash'),
                     metadata.get('filename'),
@@ -225,6 +227,7 @@ class DatabaseManager:
                     metadata.get('recipient'),
                     metadata.get('document_type'),
                     json.dumps(metadata.get('tags', [])),
+                    metadata.get('full_text'),
                     metadata.get('error'),
                     metadata.get('file_path'),
                     metadata.get('file_size'),
@@ -287,6 +290,7 @@ class DatabaseManager:
                     'recipient': row['recipient'] or '',
                     'document_type': row['document_type'] or '',
                     'tags': json.loads(row['tags']) if row['tags'] else [],
+                    'full_text': row['full_text'] or '',
                     'error': row['error'],
                     'last_updated': row['last_updated'],
                     'file_path': row['file_path'],

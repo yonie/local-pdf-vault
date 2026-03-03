@@ -74,9 +74,10 @@ def create_app(config_override: dict = None) -> Flask:
     db.reset_indexing_status()
     
     # Register blueprints
-    from .routes import api_bp, admin_bp
+    from .routes import api_bp, admin_bp, mcp_bp
     app.register_blueprint(api_bp, url_prefix='/api')
     app.register_blueprint(admin_bp, url_prefix='/api/admin')
+    app.register_blueprint(mcp_bp)
     
     # Main route
     @app.route('/')

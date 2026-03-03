@@ -155,10 +155,14 @@ Required JSON structure:
   "sender": "sender/from information (person, company, or organization)",
   "recipient": "recipient/to information (person, company, or organization)",
   "document_type": "type of document (invoice, contract, letter, report, deed, legal document, etc.)",
-  "tags": ["max", "5-10", "relevant", "tags"]
+  "tags": ["max", "5-10", "relevant", "tags"],
+  "full_text": "extract ALL readable text from the document, preserving structure and order"
 }}
 
-IMPORTANT: Limit tags to 5-10 most relevant keywords only. Keep the summary concise (2-3 sentences max).
+IMPORTANT: 
+- Limit tags to 5-10 most relevant keywords only
+- Keep the summary concise (2-3 sentences max)
+- The full_text field should contain as much text as you can read from the document - this is critical for search
 
 Look for dates, names, addresses, official seals, document types, and any other identifying information.
 Use your vision capabilities to read and understand the document content.
@@ -251,7 +255,8 @@ Return ONLY the JSON object, nothing else."""
             "sender": "",
             "recipient": "",
             "document_type": "",
-            "tags": []
+            "tags": [],
+            "full_text": ""
         }
         
         # Ensure all required fields exist with correct types
