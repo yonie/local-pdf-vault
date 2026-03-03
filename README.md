@@ -140,52 +140,72 @@ MIT License - Free for personal and commercial use.
 
 ## 🤖 MCP Integration (Model Context Protocol)
 
-LocalPDFVault exposes an **MCP server** for AI assistants (Claude, Cursor, etc.) to search and read your documents.
-
-### MCP Endpoints
-
-| Endpoint | Description |
-|----------|-------------|
-| `GET /mcp/tools/list` | List available tools |
-| `POST /mcp/tools/call` | Execute a tool call |
+LocalPDFVault exposes an **MCP server** for AI assistants to search and read your documents. This allows any MCP-compatible AI tool to access your document vault.
 
 ### Available Tools
 
-#### `search_documents`
-Search for PDF documents by content or metadata.
+| Tool | Description |
+|------|-------------|
+| `search_documents` | Search PDFs by content, metadata, or full text |
+| `get_document` | Retrieve document details with full extracted text |
+| `list_document_types` | List all document types in database |
+| `get_stats` | Get database statistics |
+
+### MCP Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/mcp/tools/list` | GET | List available tools |
+| `/mcp/tools/call` | POST | Execute a tool call |
+
+### Example: Search Documents
+
+```bash
+curl -X POST http://localhost:4337/mcp/tools/call \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "search_documents",
+    "arguments": {
+      "query": "invoice",
+      "limit": 10
+    }
+  }'
+```
+
+### Example: Get Document
+
+```bash
+curl -X POST http://localhost:4337/mcp/tools/call \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "get_document",
+    "arguments": {
+      "file_hash": "abc123..."
+    }
+  }'
+```
+
+### Configuring MCP Clients
+
+#### OpenCode
+
+Add to `~/.config/opencode/opencode.json`:
 
 ```json
 {
-  "name": "search_documents",
-  "arguments": {
-    "query": "invoice",
-    "document_type": "invoice",
-    "limit": 10
+  "mcp": {
+    "local-pdf-vault": {
+      "url": "http://localhost:4337/mcp",
+      "type": "http",
+      "enabled": true
+    }
   }
 }
 ```
 
-#### `get_document`
-Retrieve a document with full extracted text.
+#### Claude Desktop
 
-```json
-{
-  "name": "get_document",
-  "arguments": {
-    "file_hash": "abc123..."
-  }
-}
-```
-
-#### `list_document_types`
-List all document types with counts.
-
-#### `get_stats`
-Get database statistics.
-
-### Claude Desktop Setup
-
-Add to your `claude_desktop_config.json`:
+Add to your Claude Desktop configuration:
 
 ```json
 {
@@ -197,7 +217,7 @@ Add to your `claude_desktop_config.json`:
 }
 ```
 
-### Cursor IDE Setup
+#### Cursor IDE
 
 Add to your Cursor MCP settings:
 
@@ -211,15 +231,22 @@ Add to your Cursor MCP settings:
 }
 ```
 
+#### Other MCP Clients
+
+For other MCP-compatible clients, configure:
+- **Transport**: HTTP
+- **URL**: `http://localhost:4337/mcp`
+- **Tools**: All tools are read-only (no modifications to your documents)
+
 ### Using with AI Assistants
 
 Once configured, you can ask your AI assistant:
 
-- "Search my documents for invoices from 2023"
-- "Find all contracts with ACME Corp"
-- "What documents mention tax deduction?"
+- "Search my PDFs for invoices from last year"
+- "Find all contracts mentioning 'termination'"
+- "What documents does my vault contain about taxes?"
 - "Read the full text of document [hash]"
 
-The AI can search your document vault and retrieve full text content through the MCP interface.
+The AI assistant will use the MCP tools to search your document vault and retrieve content.
 
 ---
