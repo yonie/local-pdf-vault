@@ -48,25 +48,19 @@ def search():
     db = get_db()
     
     try:
-        if query.q:
-            result = db.search_metadata(
-                query=query.q,
-                limit=query.limit,
-                offset=query.offset,
-                document_type=query.document_type,
-                sender=query.sender,
-                date_from=query.date_from,
-                date_to=query.date_to,
-                sort_by=query.sort_by,
-                sort_order=query.sort_order
-            )
-        else:
-            result = db.get_all_metadata(
-                limit=query.limit,
-                offset=query.offset,
-                sort_by=query.sort_by if query.sort_by != 'relevance' else 'last_updated',
-                sort_order=query.sort_order
-            )
+        # Always use search_metadata to support filters
+        # When query is empty, it returns all documents with filters applied
+        result = db.search_metadata(
+            query=query.q,
+            limit=query.limit,
+            offset=query.offset,
+            document_type=query.document_type,
+            sender=query.sender,
+            date_from=query.date_from,
+            date_to=query.date_to,
+            sort_by=query.sort_by,
+            sort_order=query.sort_order
+        )
         
         return jsonify(result)
     except Exception as e:

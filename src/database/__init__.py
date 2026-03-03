@@ -166,6 +166,38 @@ class DatabaseManager:
             conn.execute('CREATE INDEX IF NOT EXISTS idx_sender ON pdf_metadata(sender)')
             # Index for last_updated sorting
             conn.execute('CREATE INDEX IF NOT EXISTS idx_last_updated ON pdf_metadata(last_updated DESC)')
+        
+        # Rebuild FTS5 index if it's empty but pdf_metadata has data
+        self._rebuild_fts_if_needed()
+    
+    def _rebuild_fts_if_needed(self):
+        """Rebuild FTS5 index if it's out of sync with main table."""
+        try:
+            conn = self._get_connection()
+            
+            # Check if FTS5 can actually search (not just count rows)
+            # FTS5 can have rows that aren't properly indexed
+            cursor = conn.execute("SELECT COUNT(*) FROM pdf_metadata")
+            main_count = cursor.fetchone()[0]
+            
+            if main_count == 0:
+                return  # No data to index
+            
+            # Try a simple search - if it returns 0 for common terms, rebuild
+            # Check for common document types in the database
+            cursor = conn.execute("SELECT DISTINCT document_type FROM pdf_metadata WHERE document_type IS NOT NULL AND document_type != '' LIMIT 1")
+            sample_type = cursor.fetchone()
+            
+            if sample_type:
+                # Try to find this document type in FTS5
+                cursor = conn.execute("SELECT file_hash FROM pdf_search WHERE pdf_search MATCH ? LIMIT 1", (sample_type[0],))
+                if not cursor.fetchone():
+                    logger.info(f"FTS5 index appears corrupt, rebuilding for {main_count} documents...")
+                    with self._transaction() as txn:
+                        txn.execute("INSERT INTO pdf_search(pdf_search) VALUES('rebuild')")
+                    logger.info("FTS5 index rebuilt successfully")
+        except Exception as e:
+            logger.warning(f"Could not rebuild FTS5 index: {e}")
     
     def store_metadata(self, metadata: Dict[str, Any]) -> bool:
         """
@@ -292,7 +324,78 @@ class DatabaseManager:
         try:
             conn = self._get_connection()
             
-            # Build base query
+            # If no search query, use direct query on pdf_metadata (no FTS5 needed)
+            if not query.strip():
+                # Build WHERE clause for filters
+                conditions = []
+                params = []
+                
+                if document_type:
+                    conditions.append('document_type = ?')
+                    params.append(document_type)
+                if sender:
+                    conditions.append('sender LIKE ?')
+                    params.append(f'%{sender}%')
+                if date_from:
+                    conditions.append('date >= ?')
+                    params.append(date_from)
+                if date_to:
+                    conditions.append('date <= ?')
+                    params.append(date_to)
+                
+                where_clause = 'WHERE ' + ' AND '.join(conditions) if conditions else ''
+                
+                # Determine sort
+                if sort_by == 'date':
+                    order_clause = f'ORDER BY date {sort_order.upper()}'
+                elif sort_by == 'filename':
+                    order_clause = f'ORDER BY filename {sort_order.upper()}'
+                else:  # last_updated or relevance (no ranking without search)
+                    order_clause = f'ORDER BY last_updated {sort_order.upper()}'
+                
+                # Count total
+                count_query = f'SELECT COUNT(*) FROM pdf_metadata {where_clause}'
+                cursor = conn.execute(count_query, params)
+                total = cursor.fetchone()[0]
+                
+                # Get results with pagination
+                data_query = f'SELECT * FROM pdf_metadata {where_clause} {order_clause} LIMIT ? OFFSET ?'
+                params.extend([limit + 1, offset])
+                cursor = conn.execute(data_query, params)
+                rows = cursor.fetchall()
+                
+                has_more = len(rows) > limit
+                results = rows[:limit]
+                
+                documents = []
+                for row in results:
+                    doc = {
+                        'file_hash': row['file_hash'],
+                        'filename': row['filename'],
+                        'subject': row['subject'] or '',
+                        'summary': row['summary'] or '',
+                        'date': row['date'],
+                        'sender': row['sender'] or '',
+                        'recipient': row['recipient'] or '',
+                        'document_type': row['document_type'] or '',
+                        'tags': json.loads(row['tags']) if row['tags'] else [],
+                        'error': row['error'],
+                        'last_updated': row['last_updated'],
+                        'file_path': row['file_path'],
+                        'file_size': row['file_size'],
+                        'mtime': row['mtime']
+                    }
+                    documents.append(doc)
+                
+                return {
+                    'results': documents,
+                    'total': total,
+                    'limit': limit,
+                    'offset': offset,
+                    'has_more': has_more
+                }
+            
+            # Use FTS5 for search queries
             base_query = '''
                 SELECT pm.*, bm25(pdf_search) as relevance
                 FROM pdf_metadata pm
@@ -301,12 +404,7 @@ class DatabaseManager:
             '''
             
             # Prepare search terms for FTS5
-            if query.strip():
-                # Escape special FTS5 characters and add prefix matching
-                search_terms = ' '.join(f'"{term}"*' for term in query.split() if term.strip())
-            else:
-                # Match all if no query
-                search_terms = '"*"'
+            search_terms = ' '.join(f'"{term}"*' for term in query.split() if term.strip())
             
             params = [search_terms]
             
