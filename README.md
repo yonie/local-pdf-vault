@@ -60,14 +60,14 @@ Edit `docker-compose.yml` to point to your PDF collection. You must map your loc
 
 **Examples for different Operating Systems:**
 
-- **Windows**: `- E:\Archief:/data/pdfs:ro` or `- C:\Users\Name\Documents:/data/pdfs:ro`
+- **Windows**: `- D:\Documents:/data/pdfs:ro` or `- C:\Users\Name\Documents:/data/pdfs:ro`
 - **macOS**: `- /Users/name/Documents/PDFs:/data/pdfs:ro`
 - **Linux**: `- /home/name/documents:/data/pdfs:ro` or `- /mnt/nas/archive:/data/pdfs:ro`
 
 ```yaml
     volumes:
       - ./pdfscanner.db:/app/pdfscanner.db
-      - E:\Archief:/data/pdfs:ro  # Replace with your actual host path
+      - /path/to/your/pdfs:/data/pdfs:ro  # Replace with your actual host path
 ```
 
 ### 3. Launch
@@ -140,7 +140,7 @@ MIT License - Free for personal and commercial use.
 
 ## 🤖 MCP Integration (Model Context Protocol)
 
-LocalPDFVault exposes an **MCP server** for AI assistants to search and read your documents. This allows any MCP-compatible AI tool to access your document vault.
+LocalPDFVault includes an **MCP server** (`mcp_server.py`) for AI assistants to search and read your documents. This allows any MCP-compatible AI tool to access your document vault.
 
 ### Available Tools
 
@@ -150,93 +150,32 @@ LocalPDFVault exposes an **MCP server** for AI assistants to search and read you
 | `get_document` | Retrieve document details with full extracted text |
 | `list_document_types` | List all document types in database |
 | `get_stats` | Get database statistics |
-
-### MCP Endpoints
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/mcp/tools/list` | GET | List available tools |
-| `/mcp/tools/call` | POST | Execute a tool call |
-
-### Example: Search Documents
-
-```bash
-curl -X POST http://localhost:4337/mcp/tools/call \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "search_documents",
-    "arguments": {
-      "query": "invoice",
-      "limit": 10
-    }
-  }'
-```
-
-### Example: Get Document
-
-```bash
-curl -X POST http://localhost:4337/mcp/tools/call \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "get_document",
-    "arguments": {
-      "file_hash": "abc123..."
-    }
-  }'
-```
+| `get_indexing_status` | Get current indexing progress |
 
 ### Configuring MCP Clients
 
-#### OpenCode
+The MCP server uses **stdio transport** - it runs as a local process and communicates via stdin/stdout.
 
-Add to `~/.config/opencode/opencode.json`:
+#### OpenCode / Claude Desktop / Other MCP Clients
+
+Add to your MCP configuration (e.g., `~/.config/opencode/opencode.json`):
 
 ```json
 {
   "mcp": {
     "local-pdf-vault": {
-      "url": "http://localhost:4337/mcp",
-      "type": "http",
-      "enabled": true
+      "command": ["python", "/path/to/local-pdf-vault/mcp_server.py"],
+      "type": "local",
+      "enabled": true,
+      "environment": {
+        "DATABASE_PATH": "/path/to/local-pdf-vault/pdfscanner.db"
+      }
     }
   }
 }
 ```
 
-#### Claude Desktop
-
-Add to your Claude Desktop configuration:
-
-```json
-{
-  "mcpServers": {
-    "local-pdf-vault": {
-      "url": "http://localhost:4337/mcp"
-    }
-  }
-}
-```
-
-#### Cursor IDE
-
-Add to your Cursor MCP settings:
-
-```json
-{
-  "mcp.servers": {
-    "local-pdf-vault": {
-      "url": "http://localhost:4337/mcp"
-    }
-  }
-}
-```
-
-#### Other MCP Clients
-
-For other MCP-compatible clients, configure:
-- **Transport**: HTTP
-- **URL**: `http://localhost:4337/mcp`
-- **Tools**: All tools are read-only (no modifications to your documents)
+Replace `/path/to/local-pdf-vault` with the actual path to your LocalPDFVault installation.
 
 ### Using with AI Assistants
 

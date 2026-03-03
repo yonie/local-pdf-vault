@@ -30,6 +30,7 @@ class DatabaseManager:
         self.db_path = db_path
         self._local = threading.local()
         self._create_table()
+        self._migrate_schema()
         self._enable_wal_mode()
         self._create_indexes()
     
@@ -64,6 +65,21 @@ class DatabaseManager:
                 conn.execute('PRAGMA journal_mode=WAL')
         except Exception as e:
             logger.warning(f"Could not enable WAL mode: {e}")
+    
+    def _migrate_schema(self):
+        """Add missing columns to existing tables."""
+        try:
+            conn = self._get_connection()
+            cursor = conn.execute("PRAGMA table_info(pdf_metadata)")
+            columns = {row[1] for row in cursor.fetchall()}
+            
+            if 'full_text' not in columns:
+                logger.info("Adding missing 'full_text' column to pdf_metadata")
+                conn.execute("ALTER TABLE pdf_metadata ADD COLUMN full_text TEXT")
+                conn.commit()
+                logger.info("Migration complete - full_text column added")
+        except Exception as e:
+            logger.warning(f"Migration error: {e}")
     
     def _create_table(self):
         """Create the pdf_metadata and indexing_status tables if they don't exist."""

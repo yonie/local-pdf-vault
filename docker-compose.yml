@@ -13,7 +13,7 @@ services:
       - MAX_PARALLEL_HASHING=16
     volumes:
       - ./pdfscanner.db:/app/pdfscanner.db
-      - E:\Archief:/data/pdfs:ro
+      - /path/to/your/pdfs:/data/pdfs:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
