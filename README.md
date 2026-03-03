@@ -135,3 +135,91 @@ Verify that your host path in `docker-compose.yml` is absolute and correctly for
 MIT License - Free for personal and commercial use.
 
 **⭐ If you find this useful, please star the repository!**
+
+---
+
+## 🤖 MCP Integration (Model Context Protocol)
+
+LocalPDFVault exposes an **MCP server** for AI assistants (Claude, Cursor, etc.) to search and read your documents.
+
+### MCP Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /mcp/tools/list` | List available tools |
+| `POST /mcp/tools/call` | Execute a tool call |
+
+### Available Tools
+
+#### `search_documents`
+Search for PDF documents by content or metadata.
+
+```json
+{
+  "name": "search_documents",
+  "arguments": {
+    "query": "invoice",
+    "document_type": "invoice",
+    "limit": 10
+  }
+}
+```
+
+#### `get_document`
+Retrieve a document with full extracted text.
+
+```json
+{
+  "name": "get_document",
+  "arguments": {
+    "file_hash": "abc123..."
+  }
+}
+```
+
+#### `list_document_types`
+List all document types with counts.
+
+#### `get_stats`
+Get database statistics.
+
+### Claude Desktop Setup
+
+Add to your `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "local-pdf-vault": {
+      "url": "http://localhost:4337/mcp"
+    }
+  }
+}
+```
+
+### Cursor IDE Setup
+
+Add to your Cursor MCP settings:
+
+```json
+{
+  "mcp.servers": {
+    "local-pdf-vault": {
+      "url": "http://localhost:4337/mcp"
+    }
+  }
+}
+```
+
+### Using with AI Assistants
+
+Once configured, you can ask your AI assistant:
+
+- "Search my documents for invoices from 2023"
+- "Find all contracts with ACME Corp"
+- "What documents mention tax deduction?"
+- "Read the full text of document [hash]"
+
+The AI can search your document vault and retrieve full text content through the MCP interface.
+
+---
