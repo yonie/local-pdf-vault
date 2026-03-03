@@ -480,13 +480,8 @@ function updateFilters() {
 }
 
 function applyFilter() {
-    let filtered = allResults;
-    
-    if (currentFilter !== 'all') {
-        filtered = allResults.filter(r => r.document_type === currentFilter);
-    }
-    
-    displayResults(filtered);
+    // Server-side filtering is already applied, just display results
+    displayResults(allResults);
 }
 
 function displayResults(results) {
@@ -560,7 +555,7 @@ function displayResults(results) {
     }).join('');
 }
 
-// Bulk Selection
+// Bulk Selection (for export only)
 function toggleSelect(hash) {
     if (selectedDocuments.has(hash)) {
         selectedDocuments.delete(hash);
@@ -601,60 +596,24 @@ function updateBulkActions() {
     }
 }
 
-async function bulkDelete() {
-    if (selectedDocuments.size === 0) return;
-    
-    if (!confirm(`Delete ${selectedDocuments.size} documents from the index?`)) return;
-    
-    try {
-        showToast('Deleting documents...', 'info');
-        
-        const response = await fetch('/api/delete', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ hashes: Array.from(selectedDocuments) })
-        });
-        
-        const result = await response.json();
-        
-        if (result.success) {
-            showToast(`Deleted ${result.deleted} documents`, 'success');
-            selectedDocuments.clear();
-            loadDocuments(currentSearchQuery);
-        } else {
-            showToast('Error deleting documents', 'error');
-        }
-    } catch (error) {
-        console.error('Error:', error);
-        showToast('Error deleting documents', 'error');
-    }
-}
-
-// Export
+// Export (CSV only)
 async function exportResults(format) {
+    if (format === 'json') {
+        showToast('JSON export not available', 'error');
+        return;
+    }
+    
     try {
         showToast('Exporting...', 'info');
         
-        const response = await fetch(`/api/export?format=${format}`);
-        
-        if (format === 'json') {
-            const data = await response.json();
-            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `documents_${new Date().toISOString().split('T')[0]}.json`;
-            a.click();
-            URL.revokeObjectURL(url);
-        } else {
-            const blob = await response.blob();
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `documents_${new Date().toISOString().split('T')[0]}.csv`;
-            a.click();
-            URL.revokeObjectURL(url);
-        }
+        const response = await fetch(`/api/export?format=csv`);
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `documents_${new Date().toISOString().split('T')[0]}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
         
         showToast('Export complete', 'success');
     } catch (error) {
@@ -988,37 +947,6 @@ async function startReindexing() {
     }
 }
 
-async function clearIndex() {
-    if (!confirm('Remove all document records from the database?\n\nThis will clear the index - your actual PDF files will NOT be deleted.')) return;
-    
-    try {
-        const response = await fetch('/api/clear', { method: 'DELETE' });
-        const result = await response.json();
-        
-        if (result.success) {
-            clearSelectedDocument();
-            loadStats();
-            loadDocuments();
-            showToast('Index cleared', 'success');
-        } else {
-            showToast('Error clearing index', 'error');
-        }
-    } catch (error) {
-        showToast('Error: ' + error, 'error');
-    }
-}
-
-async function clearAndRescan() {
-    if (!confirm(`Refresh the search index for your vault?\n\nThis will clear the database and re-analyze all PDFs with fresh AI analysis.\n\n⚠️ Your PDF files will NOT be modified or deleted - only the search database will be updated.\n\nThis may take a while. Continue?`)) return;
-
-    try {
-        await fetch('/api/clear', { method: 'DELETE' });
-        startReindexing();
-    } catch (error) {
-        console.error('Error clearing index:', error);
-    }
-}
-
 async function stopIndexing() {
     try {
         const response = await fetch('/api/admin/index/stop', { method: 'POST' });
@@ -1036,38 +964,49 @@ async function stopIndexing() {
     }
 }
 
-async function deleteDocument(hash) {
-    if (!confirm('Delete this document from the index?')) return;
+async function clearAndRescan() {
+    if (!confirm(`Re-analyze all PDFs in your vault?\n\nThis will scan all documents again with fresh AI analysis.\n\nYour PDF files will NOT be modified - only the search index will be updated.\n\nThis may take a while. Continue?`)) return;
     
+    // Just trigger a full reindex (force=true)
+    const btn = document.getElementById('indexBtn');
+    const headerBtn = document.getElementById('headerIndexBtn');
+    
+    btn.disabled = true;
+    btn.innerHTML = '⏳ Starting...';
+    if (headerBtn) {
+        headerBtn.disabled = true;
+        headerBtn.innerHTML = '⏳...';
+    }
+
     try {
-        const response = await fetch(`/api/delete/${hash}`, { method: 'DELETE' });
+        const response = await fetch('/api/admin/index', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ force: true })
+        });
+
         const result = await response.json();
         
         if (result.success) {
-            loadDocuments(currentSearchQuery);
-            if (currentHash === hash) {
-                document.getElementById('detailsPanel').innerHTML = `
-                    <div class="details-empty">
-                        <div class="details-empty-icon">📋</div>
-                        <h3>Document Details</h3>
-                        <p>Select a document from the list to view its metadata</p>
-                    </div>
-                `;
-                document.getElementById('previewPanel').innerHTML = `
-                    <div class="preview-empty">
-                        <div class="preview-empty-icon">📄</div>
-                        <p>PDF Preview</p>
-                    </div>
-                `;
-                currentHash = null;
-                clearSelectedDocument();
-            }
-            showToast('Document deleted', 'success');
+            showToast('Re-indexing started', 'success');
+            checkIndexingStatus();
         } else {
-            showToast('Error deleting document', 'error');
+            showToast(result.error || 'Error starting re-index', 'error');
+            btn.disabled = false;
+            btn.innerHTML = '🔄 Update Index';
+            if (headerBtn) {
+                headerBtn.disabled = false;
+                headerBtn.innerHTML = '🔄 Update';
+            }
         }
     } catch (error) {
-        showToast('Error: ' + error, 'error');
+        showToast('Error starting re-index', 'error');
+        btn.disabled = false;
+        btn.innerHTML = '🔄 Update Index';
+        if (headerBtn) {
+            headerBtn.disabled = false;
+            headerBtn.innerHTML = '🔄 Update';
+        }
     }
 }
 
@@ -1089,20 +1028,17 @@ function showDocument(hash) {
     
     // Update details panel
     document.getElementById('detailsPanel').innerHTML = `
-        <div class="details-header">
-            <div class="details-title">${escapeHtml(filename)}</div>
-            <div class="details-actions">
-                <a href="/api/pdf/${hash}" target="_blank" class="btn btn-primary btn-sm">
-                    📄 Open in New Tab
-                </a>
-                <button class="btn btn-secondary btn-sm" onclick="copyPath('${escapeHtml(result.file_path || result.filename).replace(/'/g, "\\'")}')">
-                    📋 Copy Path
-                </button>
-                <button class="btn btn-danger btn-sm" onclick="deleteDocument('${hash}')">
-                    🗑️ Delete
-                </button>
+            <div class="details-header">
+                <div class="details-title">${escapeHtml(filename)}</div>
+                <div class="details-actions">
+                    <a href="/api/pdf/${hash}" target="_blank" class="btn btn-primary btn-sm">
+                        📄 Open in New Tab
+                    </a>
+                    <button class="btn btn-secondary btn-sm" onclick="copyPath('${escapeHtml(result.file_path || result.filename).replace(/'/g, "\\'")}')">
+                        📋 Copy Path
+                    </button>
+                </div>
             </div>
-        </div>
         <div class="details-content">
             <div class="metadata-grid">
                 ${result.document_type ? `

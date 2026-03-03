@@ -237,55 +237,6 @@ def ollama_status():
         })
 
 
-# ============= Delete Routes =============
-
-@api_bp.route('/delete/<file_hash>', methods=['DELETE'])
-def delete_document(file_hash):
-    """Delete a single document from the index."""
-    if not re.match(r'^[a-fA-F0-9]{64}$', file_hash):
-        return jsonify({'error': 'Invalid hash format'}), 400
-    
-    file_hash = file_hash.lower()
-    db = get_db()
-    success = db.delete_metadata(file_hash)
-    
-    return jsonify({'success': success})
-
-
-@api_bp.route('/delete', methods=['POST'])
-def delete_documents():
-    """Delete multiple documents from the index."""
-    data = request.get_json()
-    
-    if not data or 'hashes' not in data:
-        return jsonify({'error': 'Missing hashes parameter'}), 400
-    
-    hashes = data['hashes']
-    if not isinstance(hashes, list) or len(hashes) == 0:
-        return jsonify({'error': 'hashes must be a non-empty list'}), 400
-    
-    # Validate all hashes
-    for h in hashes:
-        if not re.match(r'^[a-fA-F0-9]{64}$', h):
-            return jsonify({'error': f'Invalid hash format: {h}'}), 400
-    
-    db = get_db()
-    deleted = 0
-    for h in hashes:
-        if db.delete_metadata(h.lower()):
-            deleted += 1
-    
-    return jsonify({'success': True, 'deleted': deleted})
-
-
-@api_bp.route('/clear', methods=['DELETE'])
-def clear_database():
-    """Clear all documents from the index."""
-    db = get_db()
-    success = db.delete_all_metadata()
-    return jsonify({'success': success})
-
-
 # ============= Export Routes =============
 
 @api_bp.route('/export')

@@ -94,7 +94,6 @@
                         <input type="checkbox" id="selectAll" onchange="toggleSelectAll()">
                         <span id="selectedCount">0 selected</span>
                     </label>
-                    <button class="btn btn-sm btn-danger" onclick="bulkDelete()">🗑️ Delete</button>
                     <button class="btn btn-sm btn-secondary" onclick="clearSelection()">Clear</button>
                 </div>
 
@@ -219,17 +218,14 @@
                 <div class="admin-section">
                     <h3>🔧 Maintenance</h3>
                     <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">
-                        Reset the database by re-analyzing all documents with AI. This only updates the search index - your PDF files remain untouched on disk.
+                        Re-scan all PDFs with fresh AI analysis, or export your document index.
                     </p>
                     <div style="display: flex; gap: 8px; flex-wrap: wrap;">
                         <button class="btn btn-secondary" onclick="clearAndRescan()" style="flex: 1;">
-                            🔄 Reset Index
+                            🔄 Re-index All
                         </button>
                         <button class="btn btn-secondary" onclick="exportResults('csv')" style="flex: 1;">
                             📤 Export CSV
-                        </button>
-                        <button class="btn btn-secondary" onclick="exportResults('json')" style="flex: 1;">
-                            📤 Export JSON
                         </button>
                     </div>
                 </div>

@@ -203,9 +203,7 @@ def reindex_document(file_hash):
     if not filename or not os.path.exists(filename):
         return jsonify({'success': False, 'error': 'PDF file not found on disk'}), 404
     
-    # Delete and reindex
-    db.delete_metadata(file_hash)
-    
+    # Store metadata will replace the existing entry
     thread = threading.Thread(target=reindex_single, args=(filename,))
     thread.daemon = True
     thread.start()
