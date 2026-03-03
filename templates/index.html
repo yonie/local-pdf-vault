@@ -8,6 +8,9 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
+    <!-- Toast Container -->
+    <div id="toastContainer" class="toast-container"></div>
+
     <header class="header">
         <div class="logo">
             <div class="logo-icon">📄</div>
@@ -22,13 +25,12 @@
                     <div id="ollamaStatus">Ollama: <span style="color: var(--text-muted);">checking...</span></div>
                 </div>
             </div>
-            <button class="btn btn-secondary" onclick="openAdminPanel()">
-                ⚙️ Manage Index
+            <button class="btn btn-secondary" onclick="openAdminPanel()" title="Manage Index (G)">
+                ⚙️ Manage
             </button>
-            <button class="btn btn-primary" onclick="startIndexing()" id="headerIndexBtn">
-                🔄 Update Index
+            <button class="btn btn-primary" onclick="startIndexing()" id="headerIndexBtn" title="Update Index">
+                🔄 Update
             </button>
-
         </div>
     </header>
 
@@ -40,26 +42,83 @@
                     <div class="search-box">
                         <span class="search-icon">🔍</span>
                         <input type="text" class="search-input" id="searchInput"
-                               placeholder="Search documents..."
+                               placeholder="Search documents... (Press /)"
                                autocomplete="off">
-                        <button class="search-clear" id="searchClear" style="display: none;" title="Clear search">✕</button>
+                        <button class="search-clear" id="searchClear" style="display: none;" title="Clear search (Esc)">✕</button>
                     </div>
                     <div class="recent-searches" id="recentSearches" style="display: none;">
                         <div class="recent-searches-label">Recent searches</div>
                         <div class="recent-searches-list" id="recentSearchesList"></div>
                     </div>
                 </div>
+
+                <!-- Advanced Filters -->
+                <div class="advanced-filters" id="advancedFilters">
+                    <div class="filter-row">
+                        <select id="filterType" class="filter-select" title="Filter by document type">
+                            <option value="">All Types</option>
+                        </select>
+                        <select id="sortBy" class="filter-select" title="Sort by">
+                            <option value="relevance">Relevance</option>
+                            <option value="date">Date</option>
+                            <option value="filename">Filename</option>
+                            <option value="last_updated">Last Updated</option>
+                        </select>
+                        <button class="btn btn-sm btn-secondary" id="sortOrderBtn" title="Sort order">
+                            ↓
+                        </button>
+                    </div>
+                    <div class="filter-row" id="dateFilterRow">
+                        <input type="date" id="filterDateFrom" class="filter-date" title="From date">
+                        <span style="color: var(--text-muted);">-</span>
+                        <input type="date" id="filterDateTo" class="filter-date" title="To date">
+                    </div>
+                    <div class="filter-row">
+                        <input type="text" id="filterSender" class="filter-input" placeholder="Filter by sender..." title="Sender filter">
+                    </div>
+                    <div class="filter-actions">
+                        <button class="btn btn-sm btn-secondary" onclick="applyFilters()">Apply</button>
+                        <button class="btn btn-sm btn-secondary" onclick="clearFilters()">Clear</button>
+                        <button class="btn btn-sm btn-primary" onclick="exportResults('json')" title="Export as JSON">📤 Export</button>
+                    </div>
+                </div>
+
+                <!-- Toggle Filters Button -->
+                <button class="btn btn-sm btn-secondary filter-toggle" onclick="toggleFilters()" id="filterToggleBtn">
+                    ⚙️ Filters
+                </button>
+
+                <!-- Bulk Actions -->
+                <div class="bulk-actions" id="bulkActions" style="display: none;">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="selectAll" onchange="toggleSelectAll()">
+                        <span id="selectedCount">0 selected</span>
+                    </label>
+                    <button class="btn btn-sm btn-danger" onclick="bulkDelete()">🗑️ Delete</button>
+                    <button class="btn btn-sm btn-secondary" onclick="clearSelection()">Clear</button>
+                </div>
+
                 <div class="filters" id="filters">
                     <button class="filter-btn active" data-filter="all">All</button>
                 </div>
+
                 <div class="results-header">
                     <span class="results-count" id="resultsCount">Loading...</span>
+                    <span class="page-info" id="pageInfo"></span>
                 </div>
+
                 <div class="results-list" id="resultsList">
                     <div class="loading">
                         <div class="spinner"></div>
                         <span>Loading...</span>
                     </div>
+                </div>
+
+                <!-- Pagination -->
+                <div class="pagination" id="pagination" style="display: none;">
+                    <button class="btn btn-sm btn-secondary" id="prevPage" onclick="prevPage()">← Previous</button>
+                    <span id="pageNumbers"></span>
+                    <button class="btn btn-sm btn-secondary" id="nextPage" onclick="nextPage()">Next →</button>
                 </div>
             </aside>
         </div>
@@ -72,6 +131,14 @@
                     <div class="details-empty-icon">📋</div>
                     <h3>Document Details</h3>
                     <p>Select a document from the list to view its metadata</p>
+                    <div class="keyboard-shortcuts">
+                        <p><strong>Keyboard Shortcuts:</strong></p>
+                        <p><kbd>/</kbd> Focus search</p>
+                        <p><kbd>Esc</kbd> Clear search / Close modal</p>
+                        <p><kbd>↑</kbd><kbd>↓</kbd> Navigate results</p>
+                        <p><kbd>Enter</kbd> Open selected document</p>
+                        <p><kbd>G</kbd> Open admin panel</p>
+                    </div>
                 </div>
             </main>
         </div>
@@ -136,15 +203,35 @@
                     </div>
                 </div>
 
+                <!-- Watch Mode Section -->
+                <div class="admin-section">
+                    <h3>👁️ Auto-Index Watch Mode</h3>
+                    <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">
+                        Automatically detect and index new or modified PDF files in your vault.
+                    </p>
+                    <div id="watchStatus">
+                        <span id="watchStatusText">Checking status...</span>
+                        <button class="btn btn-sm btn-secondary" id="watchToggleBtn" onclick="toggleWatchMode()">Enable</button>
+                    </div>
+                </div>
+
                 <!-- Maintenance Section -->
                 <div class="admin-section">
                     <h3>🔧 Maintenance</h3>
                     <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">
                         Reset the database by re-analyzing all documents with AI. This only updates the search index - your PDF files remain untouched on disk.
                     </p>
-                    <button class="btn btn-secondary" onclick="clearAndRescan()" style="width: 100%;">
-                        🔄 Reset Index (Re-analyze All Files)
-                    </button>
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                        <button class="btn btn-secondary" onclick="clearAndRescan()" style="flex: 1;">
+                            🔄 Reset Index
+                        </button>
+                        <button class="btn btn-secondary" onclick="exportResults('csv')" style="flex: 1;">
+                            📤 Export CSV
+                        </button>
+                        <button class="btn btn-secondary" onclick="exportResults('json')" style="flex: 1;">
+                            📤 Export JSON
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Privacy & System Info -->
@@ -162,7 +249,6 @@
                         </div>
                         <div class="config-item">
                             <span class="config-item-label">📁 Database:</span>
-
                             <span class="config-item-value" id="configDbPath">Loading...</span>
                         </div>
                         <div class="config-item">

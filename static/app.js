@@ -1,14 +1,40 @@
+/**
+ * LocalPDFVault - AI-Powered Document Search
+ * Main application JavaScript
+ */
+
+// State
 let allResults = [];
 let currentFilter = 'all';
 let currentHash = null;
 let searchTimeout = null;
-let currentSearchQuery = '';  // Track if we have an active search
+let currentSearchQuery = '';
+let selectedDocuments = new Set();
+
+// Pagination state
+let currentPage = 0;
+let pageSize = 50;
+let totalCount = 0;
+let hasMore = false;
+
+// Filter state
+let currentSortBy = 'relevance';
+let currentSortOrder = 'desc';
+let currentFilters = {
+    type: '',
+    sender: '',
+    dateFrom: '',
+    dateTo: ''
+};
 
 // Layout Management
 let panelSizes = {};
 
 // Periodic status polling
 let statusPollingInterval = null;
+
+// Keyboard navigation
+let selectedIndex = -1;
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
@@ -17,26 +43,129 @@ document.addEventListener('DOMContentLoaded', () => {
     setupEventListeners();
     setupResizers();
     setupModalHandlers();
-    // Don't call loadTotalDocs() here - startStatusPolling() will do it immediately
-    startStatusPolling(); // Start periodic status checking (every 5 seconds)
+    setupKeyboardShortcuts();
+    loadDocumentTypes();
+    startStatusPolling();
 });
 
+// Keyboard Shortcuts
+function setupKeyboardShortcuts() {
+    document.addEventListener('keydown', (e) => {
+        // Ignore if typing in input
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') {
+            if (e.key === 'Escape') {
+                e.target.blur();
+            }
+            return;
+        }
+
+        // / - Focus search
+        if (e.key === '/') {
+            e.preventDefault();
+            document.getElementById('searchInput').focus();
+        }
+        
+        // G - Open admin panel
+        if (e.key === 'g' || e.key === 'G') {
+            e.preventDefault();
+            openAdminPanel();
+        }
+        
+        // Escape - Close modal or clear search
+        if (e.key === 'Escape') {
+            if (document.getElementById('adminModal').classList.contains('active')) {
+                closeAdminPanel();
+            } else if (document.getElementById('searchInput').value) {
+                document.getElementById('searchInput').value = '';
+                document.getElementById('searchClear').style.display = 'none';
+                loadDocuments('');
+            }
+        }
+        
+        // Arrow navigation
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            e.preventDefault();
+            navigateResults(e.key === 'ArrowDown' ? 1 : -1);
+        }
+        
+        // Enter - Open selected document
+        if (e.key === 'Enter' && selectedIndex >= 0) {
+            const results = document.querySelectorAll('.result-card');
+            if (results[selectedIndex]) {
+                results[selectedIndex].click();
+            }
+        }
+    });
+}
+
+function navigateResults(direction) {
+    const results = document.querySelectorAll('.result-card');
+    if (results.length === 0) return;
+    
+    // Remove previous selection
+    results.forEach(r => r.classList.remove('keyboard-selected'));
+    
+    // Calculate new index
+    selectedIndex += direction;
+    if (selectedIndex < 0) selectedIndex = results.length - 1;
+    if (selectedIndex >= results.length) selectedIndex = 0;
+    
+    // Highlight and scroll into view
+    results[selectedIndex].classList.add('keyboard-selected');
+    results[selectedIndex].scrollIntoView({ block: 'nearest' });
+}
 
 // URL query parameter handling
 function loadQueryFromUrl() {
     const params = new URLSearchParams(window.location.search);
     const query = params.get('q') || '';
     document.getElementById('searchInput').value = query;
+    
+    // Load filters from URL
+    currentFilters.type = params.get('type') || '';
+    currentFilters.sender = params.get('sender') || '';
+    currentFilters.dateFrom = params.get('from') || '';
+    currentFilters.dateTo = params.get('to') || '';
+    currentSortBy = params.get('sort') || 'relevance';
+    currentSortOrder = params.get('order') || 'desc';
+    
+    // Apply filter values to UI
+    if (currentFilters.type) document.getElementById('filterType').value = currentFilters.type;
+    if (currentFilters.sender) document.getElementById('filterSender').value = currentFilters.sender;
+    if (currentFilters.dateFrom) document.getElementById('filterDateFrom').value = currentFilters.dateFrom;
+    if (currentFilters.dateTo) document.getElementById('filterDateTo').value = currentFilters.dateTo;
+    document.getElementById('sortBy').value = currentSortBy;
+    document.getElementById('sortOrderBtn').textContent = currentSortOrder === 'desc' ? '↓' : '↑';
+    
     loadDocuments(query);
 }
 
 function updateUrlWithQuery(query) {
     const url = new URL(window.location);
+    
+    // Set or clear parameters
     if (query && query.trim()) {
         url.searchParams.set('q', query);
     } else {
         url.searchParams.delete('q');
     }
+    
+    // Add filters
+    if (currentFilters.type) url.searchParams.set('type', currentFilters.type);
+    else url.searchParams.delete('type');
+    
+    if (currentFilters.sender) url.searchParams.set('sender', currentFilters.sender);
+    else url.searchParams.delete('sender');
+    
+    if (currentFilters.dateFrom) url.searchParams.set('from', currentFilters.dateFrom);
+    else url.searchParams.delete('from');
+    
+    if (currentFilters.dateTo) url.searchParams.set('to', currentFilters.dateTo);
+    else url.searchParams.delete('to');
+    
+    url.searchParams.set('sort', currentSortBy);
+    url.searchParams.set('order', currentSortOrder);
+    
     window.history.replaceState({}, '', url);
 }
 
@@ -44,7 +173,6 @@ function updateUrlWithQuery(query) {
 const RECENT_SEARCHES_KEY = 'pdfScanner_recentSearches';
 const SELECTED_DOC_KEY = 'pdfScanner_selectedDocument';
 const MAX_RECENT_SEARCHES = 8;
-
 
 function saveSelectedDocument(hash) {
     localStorage.setItem(SELECTED_DOC_KEY, hash);
@@ -72,11 +200,8 @@ function saveRecentSearch(query) {
     if (!query || query.length < 2) return;
     
     let searches = getRecentSearches();
-    // Remove if already exists (to move to front)
     searches = searches.filter(s => s.toLowerCase() !== query.toLowerCase());
-    // Add to beginning
     searches.unshift(query);
-    // Keep only MAX_RECENT_SEARCHES
     searches = searches.slice(0, MAX_RECENT_SEARCHES);
     localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(searches));
     renderRecentSearches();
@@ -112,53 +237,50 @@ function useRecentSearch(query) {
     document.getElementById('searchInput').value = query;
     document.getElementById('recentSearches').style.display = 'none';
     loadDocuments(query);
-    // Move to front of recent searches
     saveRecentSearch(query);
 }
 
+// Event Listeners
 function setupEventListeners() {
     const searchInput = document.getElementById('searchInput');
     const searchClear = document.getElementById('searchClear');
     
     searchInput.addEventListener('input', (e) => {
-        // Show/hide clear button
         searchClear.style.display = e.target.value ? 'block' : 'none';
         
         clearTimeout(searchTimeout);
         searchTimeout = setTimeout(() => {
+            currentPage = 0;
             loadDocuments(e.target.value);
         }, 300);
     });
 
-    // Clear button click handler
     searchClear.addEventListener('click', () => {
         searchInput.value = '';
         searchClear.style.display = 'none';
         searchInput.focus();
+        currentPage = 0;
         loadDocuments('');
     });
 
-    // Save search on Enter or when user stops typing for a while
     searchInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && searchInput.value.trim()) {
             saveRecentSearch(searchInput.value.trim());
         }
-        // Clear on Escape key
         if (e.key === 'Escape') {
             searchInput.value = '';
             searchClear.style.display = 'none';
+            currentPage = 0;
             loadDocuments('');
         }
     });
 
-    // Show recent searches when input is focused and empty
     searchInput.addEventListener('focus', () => {
         if (!searchInput.value.trim()) {
             renderRecentSearches();
         }
     });
 
-    // Hide recent searches when clicking outside
     document.addEventListener('click', (e) => {
         const recentSearches = document.getElementById('recentSearches');
         const searchBox = document.querySelector('.search-box');
@@ -172,22 +294,36 @@ function setupEventListeners() {
             document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
             e.target.classList.add('active');
             currentFilter = e.target.dataset.filter;
+            currentPage = 0;
             applyFilter();
         }
+    });
+    
+    // Sort order toggle
+    document.getElementById('sortOrderBtn').addEventListener('click', () => {
+        currentSortOrder = currentSortOrder === 'desc' ? 'asc' : 'desc';
+        document.getElementById('sortOrderBtn').textContent = currentSortOrder === 'desc' ? '↓' : '↑';
+        currentPage = 0;
+        loadDocuments(currentSearchQuery);
+    });
+    
+    // Sort by change
+    document.getElementById('sortBy').addEventListener('change', (e) => {
+        currentSortBy = e.target.value;
+        currentPage = 0;
+        loadDocuments(currentSearchQuery);
     });
 }
 
 function setupModalHandlers() {
     const modal = document.getElementById('adminModal');
     
-    // Close on Escape key
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && modal.classList.contains('active')) {
             closeAdminPanel();
         }
     });
     
-    // Close when clicking on overlay (outside modal content)
     modal.addEventListener('click', (e) => {
         if (e.target === modal) {
             closeAdminPanel();
@@ -195,28 +331,130 @@ function setupModalHandlers() {
     });
 }
 
-async function loadDocuments(query = '') {
-    currentSearchQuery = query;  // Track the search query
-    updateUrlWithQuery(query);  // Update URL with query
+// Filter Functions
+function toggleFilters() {
+    const filters = document.getElementById('advancedFilters');
+    const btn = document.getElementById('filterToggleBtn');
+    if (filters.style.display === 'none' || !filters.style.display) {
+        filters.style.display = 'block';
+        btn.textContent = '▼ Filters';
+    } else {
+        filters.style.display = 'none';
+        btn.textContent = '⚙️ Filters';
+    }
+}
+
+function applyFilters() {
+    currentFilters.type = document.getElementById('filterType').value;
+    currentFilters.sender = document.getElementById('filterSender').value;
+    currentFilters.dateFrom = document.getElementById('filterDateFrom').value;
+    currentFilters.dateTo = document.getElementById('filterDateTo').value;
+    currentPage = 0;
+    loadDocuments(currentSearchQuery);
+}
+
+function clearFilters() {
+    document.getElementById('filterType').value = '';
+    document.getElementById('filterSender').value = '';
+    document.getElementById('filterDateFrom').value = '';
+    document.getElementById('filterDateTo').value = '';
+    currentFilters = { type: '', sender: '', dateFrom: '', dateTo: '' };
+    currentPage = 0;
+    loadDocuments(currentSearchQuery);
+}
+
+async function loadDocumentTypes() {
     try {
-        const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
-        allResults = await response.json();
+        const response = await fetch('/api/document-types');
+        const data = await response.json();
+        const select = document.getElementById('filterType');
+        
+        data.types.forEach(type => {
+            const option = document.createElement('option');
+            option.value = type;
+            option.textContent = type;
+            select.appendChild(option);
+        });
+    } catch (error) {
+        console.error('Error loading document types:', error);
+    }
+}
+
+// Pagination
+function prevPage() {
+    if (currentPage > 0) {
+        currentPage--;
+        loadDocuments(currentSearchQuery);
+    }
+}
+
+function nextPage() {
+    if (hasMore) {
+        currentPage++;
+        loadDocuments(currentSearchQuery);
+    }
+}
+
+function renderPagination() {
+    const pagination = document.getElementById('pagination');
+    const pageInfo = document.getElementById('pageInfo');
+    const prevBtn = document.getElementById('prevPage');
+    const nextBtn = document.getElementById('nextPage');
+    
+    if (totalCount > pageSize) {
+        pagination.style.display = 'flex';
+        const start = currentPage * pageSize + 1;
+        const end = Math.min((currentPage + 1) * pageSize, totalCount);
+        pageInfo.textContent = `${start}-${end} of ${totalCount}`;
+        prevBtn.disabled = currentPage === 0;
+        nextBtn.disabled = !hasMore;
+    } else {
+        pagination.style.display = 'none';
+    }
+}
+
+// Load Documents
+async function loadDocuments(query = '') {
+    currentSearchQuery = query;
+    updateUrlWithQuery(query);
+    
+    try {
+        // Build query params
+        const params = new URLSearchParams();
+        if (query) params.set('q', query);
+        params.set('limit', pageSize);
+        params.set('offset', currentPage * pageSize);
+        params.set('sort_by', currentSortBy);
+        params.set('sort_order', currentSortOrder);
+        if (currentFilters.type) params.set('document_type', currentFilters.type);
+        if (currentFilters.sender) params.set('sender', currentFilters.sender);
+        if (currentFilters.dateFrom) params.set('date_from', currentFilters.dateFrom);
+        if (currentFilters.dateTo) params.set('date_to', currentFilters.dateTo);
+        
+        const response = await fetch(`/api/search?${params.toString()}`);
+        const data = await response.json();
+        
+        allResults = data.results || data;  // Handle both paginated and old format
+        totalCount = data.total || allResults.length;
+        hasMore = data.has_more || false;
 
         updateFilters();
         applyFilter();
         
-        // Hide recent searches when we have search results
         if (query) {
             document.getElementById('recentSearches').style.display = 'none';
         }
         
-        // Restore previously selected document if it exists in results
+        // Restore selection
         const savedHash = loadSelectedDocument();
         if (savedHash && allResults.some(r => r.file_hash === savedHash)) {
             showDocument(savedHash);
         }
+        
+        renderPagination();
     } catch (error) {
         console.error('Error loading documents:', error);
+        showToast('Error loading documents', 'error');
         document.getElementById('resultsList').innerHTML = `
             <div class="no-results">
                 <div class="no-results-icon">⚠️</div>
@@ -255,7 +493,7 @@ function displayResults(results) {
     const container = document.getElementById('resultsList');
     const countEl = document.getElementById('resultsCount');
 
-    countEl.textContent = `${results.length} document${results.length !== 1 ? 's' : ''}`;
+    countEl.textContent = `${totalCount} document${totalCount !== 1 ? 's' : ''}`;
 
     if (results.length === 0) {
         container.innerHTML = `
@@ -267,50 +505,176 @@ function displayResults(results) {
         return;
     }
 
-    container.innerHTML = results.map(result => {
-        const filename = result.filename.split(/[/\\\\]/).pop();
+    container.innerHTML = results.map((result, index) => {
+        const filename = result.filename.split(/[/\\]/).pop();
         const tags = (result.tags || []).slice(0, 4);
         const matches = result.search_matches || [];
         const relevanceScore = result.relevance_score || 0;
-        // Only show match percentage when there's an active search
         const showScore = currentSearchQuery && currentSearchQuery.trim() && relevanceScore > 0;
         const matchPercent = showScore ? getMatchPercent(relevanceScore) : { show: false };
+        const isSelected = selectedDocuments.has(result.file_hash);
 
         return `
             <div class="result-card ${result.file_hash === currentHash ? 'active' : ''}"
+                 data-index="${index}"
                  onclick="showDocument('${result.file_hash}')">
-                <div class="result-header">
-                    <span class="result-filename">${escapeHtml(filename)}</span>
-                    ${result.document_type ? `<span class="result-type">${escapeHtml(result.document_type)}</span>` : ''}
+                <div class="result-checkbox">
+                    <input type="checkbox" 
+                           ${isSelected ? 'checked' : ''} 
+                           onclick="event.stopPropagation(); toggleSelect('${result.file_hash}')"
+                           title="Select for bulk action">
                 </div>
-                ${result.subject ? `<div class="result-subject">${escapeHtml(result.subject)}</div>` : ''}
-                ${tags.length > 0 ? `
-                    <div class="result-tags">
-                        ${tags.map(tag => `<span class="tag">${escapeHtml(tag)}</span>`).join('')}
+                <div class="result-content">
+                    <div class="result-header">
+                        <span class="result-filename">${escapeHtml(filename)}</span>
+                        ${result.document_type ? `<span class="result-type">${escapeHtml(result.document_type)}</span>` : ''}
                     </div>
-                ` : ''}
-                ${matches.length > 0 ? `
-                    <div class="result-matches">
-                        ${matches.map(match => `
-                            <span class="match-badge">
-                                <span class="match-term">${escapeHtml(match.term)}</span>
-                                <span class="match-fields">(${match.fields.join(', ')})</span>
-                            </span>
-                        `).join('')}
-                        ${showScore && matchPercent.show ? `
-                            <span class="match-score ${matchPercent.level}" title="${matchPercent.label}">
-                                ${matchPercent.percent}%
-                            </span>
-                        ` : ''}
+                    ${result.subject ? `<div class="result-subject">${escapeHtml(result.subject)}</div>` : ''}
+                    ${tags.length > 0 ? `
+                        <div class="result-tags">
+                            ${tags.map(tag => `<span class="tag">${escapeHtml(tag)}</span>`).join('')}
+                        </div>
+                    ` : ''}
+                    ${matches.length > 0 ? `
+                        <div class="result-matches">
+                            ${matches.map(match => `
+                                <span class="match-badge">
+                                    <span class="match-term">${escapeHtml(match.term)}</span>
+                                    <span class="match-fields">(${match.fields.join(', ')})</span>
+                                </span>
+                            `).join('')}
+                            ${showScore && matchPercent.show ? `
+                                <span class="match-score ${matchPercent.level}" title="${matchPercent.label}">
+                                    ${matchPercent.percent}%
+                                </span>
+                            ` : ''}
+                        </div>
+                    ` : ''}
+                    <div class="result-meta">
+                        ${result.date ? `<span class="result-meta-item">📅 ${escapeHtml(result.date)}</span>` : ''}
+                        ${result.sender ? `<span class="result-meta-item">👤 ${escapeHtml(result.sender)}</span>` : ''}
                     </div>
-                ` : ''}
-                <div class="result-meta">
-                    ${result.date ? `<span class="result-meta-item">📅 ${escapeHtml(result.date)}</span>` : ''}
-                    ${result.sender ? `<span class="result-meta-item">👤 ${escapeHtml(result.sender)}</span>` : ''}
                 </div>
             </div>
         `;
     }).join('');
+}
+
+// Bulk Selection
+function toggleSelect(hash) {
+    if (selectedDocuments.has(hash)) {
+        selectedDocuments.delete(hash);
+    } else {
+        selectedDocuments.add(hash);
+    }
+    updateBulkActions();
+    applyFilter();
+}
+
+function toggleSelectAll() {
+    const selectAll = document.getElementById('selectAll');
+    if (selectAll.checked) {
+        allResults.forEach(r => selectedDocuments.add(r.file_hash));
+    } else {
+        selectedDocuments.clear();
+    }
+    updateBulkActions();
+    applyFilter();
+}
+
+function clearSelection() {
+    selectedDocuments.clear();
+    document.getElementById('selectAll').checked = false;
+    updateBulkActions();
+    applyFilter();
+}
+
+function updateBulkActions() {
+    const bulkActions = document.getElementById('bulkActions');
+    const selectedCount = document.getElementById('selectedCount');
+    
+    if (selectedDocuments.size > 0) {
+        bulkActions.style.display = 'flex';
+        selectedCount.textContent = `${selectedDocuments.size} selected`;
+    } else {
+        bulkActions.style.display = 'none';
+    }
+}
+
+async function bulkDelete() {
+    if (selectedDocuments.size === 0) return;
+    
+    if (!confirm(`Delete ${selectedDocuments.size} documents from the index?`)) return;
+    
+    try {
+        showToast('Deleting documents...', 'info');
+        
+        const response = await fetch('/api/delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ hashes: Array.from(selectedDocuments) })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            showToast(`Deleted ${result.deleted} documents`, 'success');
+            selectedDocuments.clear();
+            loadDocuments(currentSearchQuery);
+        } else {
+            showToast('Error deleting documents', 'error');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        showToast('Error deleting documents', 'error');
+    }
+}
+
+// Export
+async function exportResults(format) {
+    try {
+        showToast('Exporting...', 'info');
+        
+        const response = await fetch(`/api/export?format=${format}`);
+        
+        if (format === 'json') {
+            const data = await response.json();
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `documents_${new Date().toISOString().split('T')[0]}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+        } else {
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `documents_${new Date().toISOString().split('T')[0]}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+        
+        showToast('Export complete', 'success');
+    } catch (error) {
+        console.error('Export error:', error);
+        showToast('Export failed', 'error');
+    }
+}
+
+// Toast Notifications
+function showToast(message, type = 'info') {
+    const container = document.getElementById('toastContainer');
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.textContent = message;
+    container.appendChild(toast);
+    
+    setTimeout(() => {
+        toast.classList.add('toast-fade');
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
 }
 
 // Admin Panel Functions
@@ -318,6 +682,7 @@ function openAdminPanel() {
     document.getElementById('adminModal').classList.add('active');
     loadStats();
     loadSystemConfig();
+    loadWatchStatus();
 }
 
 function closeAdminPanel() {
@@ -348,21 +713,64 @@ async function loadSystemConfig() {
         document.getElementById('vaultDisplay').textContent = config.vault_path || '/data/pdfs';
     } catch (error) {
         console.error('Error loading config:', error);
-        document.getElementById('configDbPath').textContent = 'Error loading';
-        document.getElementById('configOllamaUrl').textContent = 'Error loading';
-        document.getElementById('configModel').textContent = 'Error loading';
     }
 }
 
+async function loadWatchStatus() {
+    try {
+        const response = await fetch('/api/admin/watch/status');
+        const status = await response.json();
+        
+        const statusText = document.getElementById('watchStatusText');
+        const toggleBtn = document.getElementById('watchToggleBtn');
+        
+        if (status.enabled) {
+            statusText.textContent = status.running ? 'Watch mode active' : 'Watch mode enabled (not running)';
+            toggleBtn.textContent = 'Stop';
+            toggleBtn.onclick = stopWatchMode;
+        } else {
+            statusText.textContent = 'Watch mode disabled in config';
+            toggleBtn.style.display = 'none';
+        }
+    } catch (error) {
+        console.error('Error loading watch status:', error);
+    }
+}
+
+async function toggleWatchMode() {
+    try {
+        const response = await fetch('/api/admin/watch/start', { method: 'POST' });
+        const result = await response.json();
+        
+        if (result.success) {
+            showToast('Watch mode started', 'success');
+        } else {
+            showToast(result.error || 'Failed to start watch mode', 'error');
+        }
+        loadWatchStatus();
+    } catch (error) {
+        showToast('Error starting watch mode', 'error');
+    }
+}
+
+async function stopWatchMode() {
+    try {
+        const response = await fetch('/api/admin/watch/stop', { method: 'POST' });
+        const result = await response.json();
+        showToast('Watch mode stopped', 'info');
+        loadWatchStatus();
+    } catch (error) {
+        showToast('Error stopping watch mode', 'error');
+    }
+}
 
 async function loadTotalDocs(statusData = null) {
     try {
-        // If status data is provided, use it; otherwise fetch both
         const [stats, status] = statusData
             ? [await fetch('/api/stats').then(r => r.json()), statusData]
             : await Promise.all([
                 fetch('/api/stats').then(r => r.json()),
-                fetch('/api/index/status').then(r => r.json())
+                fetch('/api/admin/index/status').then(r => r.json())
             ]);
         
         const totalDocsEl = document.getElementById('totalDocs');
@@ -377,21 +785,17 @@ async function loadTotalDocs(statusData = null) {
         }
     } catch (error) {
         console.error('Error loading total docs:', error);
-        document.getElementById('totalDocs').textContent = 'Current index has - total documents';
     }
 }
 
 function startStatusPolling() {
-    // Clear any existing interval
     if (statusPollingInterval) {
         clearInterval(statusPollingInterval);
     }
     
-    // Check status immediately
     checkIndexingStatus();
     checkOllamaStatus();
     
-    // Then check every 5 seconds
     statusPollingInterval = setInterval(() => {
         checkIndexingStatus();
         checkOllamaStatus();
@@ -400,24 +804,20 @@ function startStatusPolling() {
 
 async function checkIndexingStatus() {
     try {
-        const response = await fetch('/api/index/status');
+        const response = await fetch('/api/admin/index/status');
         const status = await response.json();
         
-        // Update the total docs display with the status we just fetched
         await loadTotalDocs(status);
         
         if (status.is_running) {
-            // Indexing is in progress - show progress UI if not already shown
             if (document.getElementById('indexProgress').style.display !== 'block') {
                 document.getElementById('indexProgress').style.display = 'block';
                 document.getElementById('stopBtn').style.display = 'inline-block';
                 
-                // Disable and update main button
                 const indexBtn = document.getElementById('indexBtn');
                 indexBtn.disabled = true;
                 indexBtn.innerHTML = '⏳ Processing...';
                 
-                // Disable and update header button
                 const headerBtn = document.getElementById('headerIndexBtn');
                 if (headerBtn) {
                     headerBtn.disabled = true;
@@ -425,7 +825,6 @@ async function checkIndexingStatus() {
                 }
             }
             
-            // Update progress details
             const progressBarContainer = document.querySelector('.progress-bar-container');
             if (status.total > 0) {
                 progressBarContainer.classList.remove('indeterminate');
@@ -448,29 +847,25 @@ async function checkIndexingStatus() {
             document.getElementById('progressFile').textContent = status.current_file || '-';
             
         } else {
-            // Indexing is not running - hide progress UI if shown
             if (document.getElementById('indexProgress').style.display === 'block') {
                 document.getElementById('indexProgress').style.display = 'none';
                 document.getElementById('stopBtn').style.display = 'none';
                 
-                // Reset main button
                 const indexBtn = document.getElementById('indexBtn');
                 indexBtn.disabled = false;
                 indexBtn.innerHTML = '🔄 Update Index';
                 
-                // Reset header button
                 const headerBtn = document.getElementById('headerIndexBtn');
                 if (headerBtn) {
                     headerBtn.disabled = false;
-                    headerBtn.innerHTML = '🔄 Update Index';
+                    headerBtn.innerHTML = '🔄 Update';
                 }
                 
                 document.getElementById('stopBtn').disabled = false;
                 document.getElementById('stopBtn').innerHTML = 'Stop';
                 
-                // Reload data when indexing completes
                 loadStats();
-                loadDocuments();
+                loadDocuments(currentSearchQuery);
             }
         }
 
@@ -502,7 +897,6 @@ async function checkOllamaStatus() {
         }
     } catch (error) {
         console.error('Error checking Ollama status:', error);
-        document.getElementById('ollamaStatus').innerHTML = `Ollama: <span style="color: var(--text-muted);">unknown</span>`;
     }
 }
 
@@ -516,11 +910,11 @@ async function startIndexing() {
     btn.innerHTML = '⏳ Initializing...';
     if (headerBtn) {
         headerBtn.disabled = true;
-        headerBtn.innerHTML = '⏳ Initializing...';
+        headerBtn.innerHTML = '⏳...';
     }
 
     try {
-        const response = await fetch('/api/index', {
+        const response = await fetch('/api/admin/index', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({})
@@ -529,24 +923,24 @@ async function startIndexing() {
         const result = await response.json();
         
         if (result.success) {
-            // Immediately check status to show progress UI
+            showToast('Indexing started', 'success');
             await checkIndexingStatus();
         } else {
-            alert('Error: ' + result.error);
+            showToast(result.error || 'Error starting indexing', 'error');
             btn.disabled = false;
             btn.innerHTML = '🔄 Update Index';
             if (headerBtn) {
                 headerBtn.disabled = false;
-                headerBtn.innerHTML = '🔄 Update Index';
+                headerBtn.innerHTML = '🔄 Update';
             }
         }
     } catch (error) {
-        alert('Error starting indexing: ' + error);
+        showToast('Error starting indexing', 'error');
         btn.disabled = false;
         btn.innerHTML = '🔄 Update Index';
         if (headerBtn) {
             headerBtn.disabled = false;
-            headerBtn.innerHTML = '🔄';
+            headerBtn.innerHTML = '🔄 Update';
         }
     }
 }
@@ -559,11 +953,11 @@ async function startReindexing() {
     btn.innerHTML = '⏳ Initializing...';
     if (headerBtn) {
         headerBtn.disabled = true;
-        headerBtn.innerHTML = '⏳ Initializing...';
+        headerBtn.innerHTML = '⏳...';
     }
 
     try {
-        const response = await fetch('/api/index', {
+        const response = await fetch('/api/admin/index', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ force: true })
@@ -572,31 +966,30 @@ async function startReindexing() {
         const result = await response.json();
         
         if (result.success) {
-            // Immediately check status to show progress UI
+            showToast('Reindexing started', 'success');
             await checkIndexingStatus();
         } else {
-            alert('Error: ' + result.error);
+            showToast(result.error || 'Error starting reindexing', 'error');
             btn.disabled = false;
             btn.innerHTML = '🔄 Update Index';
             if (headerBtn) {
                 headerBtn.disabled = false;
-                headerBtn.innerHTML = '🔄 Update Index';
+                headerBtn.innerHTML = '🔄 Update';
             }
         }
     } catch (error) {
-        alert('Error starting analysis: ' + error);
+        showToast('Error starting reindexing', 'error');
         btn.disabled = false;
         btn.innerHTML = '🔄 Update Index';
         if (headerBtn) {
             headerBtn.disabled = false;
-            headerBtn.innerHTML = '🔄';
+            headerBtn.innerHTML = '🔄 Update';
         }
     }
 }
 
-
 async function clearIndex() {
-    if (!confirm('Remove all document records from the database?\\n\\nThis will clear the index - your actual PDF files will NOT be deleted.')) return;
+    if (!confirm('Remove all document records from the database?\n\nThis will clear the index - your actual PDF files will NOT be deleted.')) return;
     
     try {
         const response = await fetch('/api/clear', { method: 'DELETE' });
@@ -606,51 +999,41 @@ async function clearIndex() {
             clearSelectedDocument();
             loadStats();
             loadDocuments();
-            alert('All records removed successfully. You can scan your folders again to rebuild the index.');
+            showToast('Index cleared', 'success');
         } else {
-            alert('Error clearing index');
+            showToast('Error clearing index', 'error');
         }
     } catch (error) {
-        alert('Error: ' + error);
+        showToast('Error: ' + error, 'error');
     }
 }
 
 async function clearAndRescan() {
     if (!confirm(`Refresh the search index for your vault?\n\nThis will clear the database and re-analyze all PDFs with fresh AI analysis.\n\n⚠️ Your PDF files will NOT be modified or deleted - only the search database will be updated.\n\nThis may take a while. Continue?`)) return;
 
-    // First clear the index
     try {
         await fetch('/api/clear', { method: 'DELETE' });
+        startReindexing();
     } catch (error) {
         console.error('Error clearing index:', error);
     }
-
-    // Then start re-indexing
-    startReindexing();
 }
 
 async function stopIndexing() {
-
     try {
-        const response = await fetch('/api/index/stop', { method: 'POST' });
+        const response = await fetch('/api/admin/index/stop', { method: 'POST' });
         const result = await response.json();
 
         if (result.success) {
             document.getElementById('stopBtn').disabled = true;
             document.getElementById('stopBtn').innerHTML = 'Stopping...';
-            alert('Stop signal sent. The indexing process will stop gracefully.');
+            showToast('Stop signal sent', 'info');
         } else {
-            alert('Error: ' + result.error);
+            showToast(result.error || 'Error stopping indexing', 'error');
         }
     } catch (error) {
-        alert('Error stopping indexing: ' + error);
+        showToast('Error stopping indexing', 'error');
     }
-}
-
-// This function is no longer needed - status polling handles everything
-// Keeping it as a no-op for backwards compatibility
-function startProgressPolling() {
-    // Status polling now happens automatically every 5 seconds via startStatusPolling()
 }
 
 async function deleteDocument(hash) {
@@ -661,7 +1044,7 @@ async function deleteDocument(hash) {
         const result = await response.json();
         
         if (result.success) {
-            loadDocuments();
+            loadDocuments(currentSearchQuery);
             if (currentHash === hash) {
                 document.getElementById('detailsPanel').innerHTML = `
                     <div class="details-empty">
@@ -679,33 +1062,32 @@ async function deleteDocument(hash) {
                 currentHash = null;
                 clearSelectedDocument();
             }
+            showToast('Document deleted', 'success');
         } else {
-            alert('Error deleting document');
+            showToast('Error deleting document', 'error');
         }
     } catch (error) {
-        alert('Error: ' + error);
+        showToast('Error: ' + error, 'error');
     }
 }
-
 
 function showDocument(hash) {
     const result = allResults.find(r => r.file_hash === hash);
     if (!result) return;
     
     currentHash = hash;
-    
-    // Save selected document to localStorage
+    selectedIndex = allResults.findIndex(r => r.file_hash === hash);
     saveSelectedDocument(hash);
     
     // Update active state in list
     document.querySelectorAll('.result-card').forEach(card => {
-        card.classList.toggle('active', card.onclick.toString().includes(hash));
+        card.classList.toggle('active', card.dataset.index == selectedIndex);
     });
     
-    const filename = result.filename.split(/[/\\\\]/).pop();
+    const filename = result.filename.split(/[/\\]/).pop();
     const tags = result.tags || [];
     
-    // Update details panel (middle)
+    // Update details panel
     document.getElementById('detailsPanel').innerHTML = `
         <div class="details-header">
             <div class="details-title">${escapeHtml(filename)}</div>
@@ -713,8 +1095,11 @@ function showDocument(hash) {
                 <a href="/api/pdf/${hash}" target="_blank" class="btn btn-primary btn-sm">
                     📄 Open in New Tab
                 </a>
-                <button class="btn btn-secondary btn-sm" onclick="copyPath('${escapeHtml(result.filename).replace(/'/g, "\\'")}')">
+                <button class="btn btn-secondary btn-sm" onclick="copyPath('${escapeHtml(result.file_path || result.filename).replace(/'/g, "\\'")}')">
                     📋 Copy Path
+                </button>
+                <button class="btn btn-danger btn-sm" onclick="deleteDocument('${hash}')">
+                    🗑️ Delete
                 </button>
             </div>
         </div>
@@ -766,12 +1151,12 @@ function showDocument(hash) {
                 ` : ''}
             </div>
             <div class="file-path">
-                📁 ${escapeHtml(result.filename)}
+                📁 ${escapeHtml(result.file_path || result.filename)}
             </div>
         </div>
     `;
     
-    // Update preview panel (right)
+    // Update preview panel
     document.getElementById('previewPanel').innerHTML = `
         <div class="preview-header">PDF Preview - Drag to pan • Ctrl+Scroll to zoom • Scroll to navigate</div>
         <div class="pdfjs-container">
@@ -792,7 +1177,6 @@ function showDocument(hash) {
         </div>
     `;
 
-    // Initialize PDF viewer
     if (window.pdfViewer) {
         window.pdfViewer.destroy();
     }
@@ -801,26 +1185,11 @@ function showDocument(hash) {
 
 function copyPath(path) {
     navigator.clipboard.writeText(path).then(() => {
-        const btn = event.target;
-        const originalText = btn.innerHTML;
-        btn.innerHTML = '✓ Copied!';
-        setTimeout(() => {
-            btn.innerHTML = originalText;
-        }, 2000);
+        showToast('Path copied to clipboard', 'success');
     });
 }
 
 function getMatchPercent(score) {
-    // Convert numeric relevance score to 0-100% for display
-    // Only show percentage when there's an active search (score > 0)
-    // Score tiers from pdfscanner.py:
-    // 1000+ = exact phrase match (100%)
-    // 500-999 = all terms present (80-95%)
-    // 100-499 = multiple term matches (50-75%)
-    // 50-99 = single term match (30-45%)
-    // 1-49 = fuzzy match only (10-25%)
-    // 0 = no search query or no match
-    
     if (score <= 0) {
         return { show: false, percent: 0, level: '', label: '' };
     } else if (score >= 1000) {
@@ -847,8 +1216,7 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
-
-// PDF.js Viewer Class - Completely rebuilt with robust zoom
+// PDF.js Viewer Class
 class PDFViewer {
     constructor(hash) {
         this.hash = hash;
@@ -857,14 +1225,12 @@ class PDFViewer {
         this.pageRendering = false;
         this.pageNumPending = null;
         
-        // Zoom configuration
-        this.scale = null; // Will be calculated to fit width
-        this.defaultScale = null; // Will be set after fit-to-width
+        this.scale = null;
+        this.defaultScale = null;
         this.minScale = 0.25;
         this.maxScale = 5.0;
-        this.zoomStep = 0.15; // Smoother zoom increment (15%)
+        this.zoomStep = 0.15;
         
-        // DOM elements
         this.canvas = document.getElementById('pdfCanvas');
         this.canvasInner = document.getElementById('pdfCanvasInner');
         this.prevBtn = document.getElementById('prevBtn');
@@ -872,11 +1238,9 @@ class PDFViewer {
         this.pageInfo = document.getElementById('pageInfo');
         this.zoomLevel = document.getElementById('zoomLevel');
         
-        // Current page dimensions (for scroll position preservation)
         this.currentPageWidth = 0;
         this.currentPageHeight = 0;
         
-        // Drag state
         this.isDragging = false;
         this.dragStartX = 0;
         this.dragStartY = 0;
@@ -890,9 +1254,7 @@ class PDFViewer {
     setupEventListeners() {
         const container = this.canvas;
         
-        // Mouse drag for panning
         container.addEventListener('mousedown', (e) => {
-            // Only enable dragging if content is larger than container
             if (container.scrollWidth > container.clientWidth ||
                 container.scrollHeight > container.clientHeight) {
                 this.isDragging = true;
@@ -924,7 +1286,6 @@ class PDFViewer {
         container.addEventListener('mouseup', stopDragging);
         container.addEventListener('mouseleave', stopDragging);
         
-        // Update cursor based on content size
         container.addEventListener('mouseenter', () => {
             if (!this.isDragging &&
                 (container.scrollWidth > container.clientWidth ||
@@ -933,29 +1294,23 @@ class PDFViewer {
             }
         });
         
-        // Ctrl+Scroll for zoom
         container.addEventListener('wheel', (e) => {
             if (e.ctrlKey) {
                 e.preventDefault();
                 
-                // Get the mouse position relative to the container
                 const rect = container.getBoundingClientRect();
                 const mouseX = e.clientX - rect.left;
                 const mouseY = e.clientY - rect.top;
                 
-                // Calculate scroll position percentages before zoom
                 const scrollXPercent = (container.scrollLeft + mouseX) / container.scrollWidth;
                 const scrollYPercent = (container.scrollTop + mouseY) / container.scrollHeight;
                 
-                // Apply zoom
                 if (e.deltaY < 0) {
                     this.zoomIn();
                 } else {
                     this.zoomOut();
                 }
                 
-                // Preserve the scroll position relative to the original mouse position
-                // This will be applied after rendering completes
                 this.pendingScrollPosition = {
                     percentX: scrollXPercent,
                     percentY: scrollYPercent,
@@ -965,12 +1320,9 @@ class PDFViewer {
             }
         }, { passive: false });
         
-        // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
-            // Only handle if this viewer is active
             if (!this.pdfDoc) return;
             
-            // Zoom: Ctrl/Cmd + Plus/Minus
             if ((e.ctrlKey || e.metaKey) && !e.shiftKey) {
                 if (e.key === '+' || e.key === '=') {
                     e.preventDefault();
@@ -984,7 +1336,6 @@ class PDFViewer {
                 }
             }
             
-            // Page navigation: Arrow keys
             if (e.key === 'ArrowLeft' && !e.ctrlKey && !e.metaKey) {
                 e.preventDefault();
                 this.prevPage();
@@ -997,7 +1348,6 @@ class PDFViewer {
 
     async loadPDF() {
         try {
-            // Load PDF.js library if not already loaded
             if (!window.pdfjsLib) {
                 await this.loadPDFJS();
             }
@@ -1008,10 +1358,8 @@ class PDFViewer {
             this.updatePageInfo();
             this.updateButtons();
 
-            // First fit to width for initial display
             await this.calculateAndRenderFitToWidth();
 
-            // Then automatically fit to height after the canvas is rendered
             const observer = new MutationObserver(() => {
                 observer.disconnect();
                 requestAnimationFrame(() => {
@@ -1030,18 +1378,15 @@ class PDFViewer {
             const page = await this.pdfDoc.getPage(this.pageNum);
             const viewport = page.getViewport({ scale: 1 });
 
-            // Wait for next animation frame to ensure DOM layout is complete
             await new Promise(resolve => requestAnimationFrame(resolve));
 
-            // Now measure the container - it should have proper dimensions
-            const containerWidth = this.canvas.clientWidth - 40; // Account for padding
+            const containerWidth = this.canvas.clientWidth - 40;
 
             if (containerWidth > 0) {
                 const fitScale = Math.min(this.maxScale, Math.max(this.minScale, containerWidth / viewport.width));
                 this.scale = fitScale;
                 this.defaultScale = fitScale;
             } else {
-                // Fallback if container width is still 0
                 this.scale = 1.5;
                 this.defaultScale = 1.5;
             }
@@ -1061,18 +1406,15 @@ class PDFViewer {
             const page = await this.pdfDoc.getPage(this.pageNum);
             const viewport = page.getViewport({ scale: 1 });
 
-            // Wait for next animation frame to ensure DOM layout is complete
             await new Promise(resolve => requestAnimationFrame(resolve));
 
-            // Measure the container height for height-based fitting
-            const containerHeight = this.canvas.clientHeight - 40; // Account for padding
+            const containerHeight = this.canvas.clientHeight - 40;
 
             if (containerHeight > 0) {
                 const fitScale = Math.min(this.maxScale, Math.max(this.minScale, containerHeight / viewport.height));
                 this.scale = fitScale;
                 this.defaultScale = fitScale;
             } else {
-                // Fallback if container height is still 0
                 this.scale = 1.5;
                 this.defaultScale = 1.5;
             }
@@ -1117,7 +1459,6 @@ class PDFViewer {
             const page = await this.pdfDoc.getPage(num);
             const viewport = page.getViewport({ scale: this.scale });
             
-            // Store current dimensions
             this.currentPageWidth = viewport.width;
             this.currentPageHeight = viewport.height;
             
@@ -1129,7 +1470,6 @@ class PDFViewer {
             canvas.style.display = 'block';
             canvas.style.boxShadow = '0 4px 20px rgba(0, 0, 0, 0.5)';
 
-            // Clear previous content
             this.canvasInner.innerHTML = '';
 
             const renderContext = {
@@ -1142,7 +1482,6 @@ class PDFViewer {
             this.canvasInner.appendChild(canvas);
             this.pageRendering = false;
             
-            // Apply pending scroll position if exists (from zoom operation)
             if (this.pendingScrollPosition) {
                 const pos = this.pendingScrollPosition;
                 this.canvas.scrollLeft = (pos.percentX * this.canvas.scrollWidth) - pos.mouseX;
@@ -1150,7 +1489,6 @@ class PDFViewer {
                 this.pendingScrollPosition = null;
             }
 
-            // Handle pending page render if queued during rendering
             if (this.pageNumPending !== null) {
                 const pending = this.pageNumPending;
                 this.pageNumPending = null;
@@ -1215,8 +1553,7 @@ class PDFViewer {
         try {
             const page = await this.pdfDoc.getPage(this.pageNum);
             const viewport = page.getViewport({ scale: 1 });
-            // Use the actual canvas container width (the scrollable div)
-            const containerWidth = this.canvas.clientWidth - 40; // Account for padding
+            const containerWidth = this.canvas.clientWidth - 40;
             this.scale = Math.min(this.maxScale, Math.max(this.minScale, containerWidth / viewport.width));
             this.canvas.scrollTop = 0;
             this.canvas.scrollLeft = 0;
@@ -1233,8 +1570,7 @@ class PDFViewer {
         try {
             const page = await this.pdfDoc.getPage(this.pageNum);
             const viewport = page.getViewport({ scale: 1 });
-            // Use the actual canvas container height (the scrollable div)
-            const containerHeight = this.canvas.clientHeight - 40; // Account for padding
+            const containerHeight = this.canvas.clientHeight - 40;
             this.scale = Math.min(this.maxScale, Math.max(this.minScale, containerHeight / viewport.height));
             this.canvas.scrollTop = 0;
             this.canvas.scrollLeft = 0;
@@ -1247,7 +1583,6 @@ class PDFViewer {
 
     resetView() {
         if (this.defaultScale === null) {
-            // If default wasn't set yet, recalculate fit-to-width
             this.fitToWidth();
         } else {
             this.scale = this.defaultScale;
@@ -1326,11 +1661,10 @@ function setupResizers() {
 }
 
 function saveLayoutPreferences() {
-    // Save panel sizes, but never save the preview panel size
     const panels = document.querySelectorAll('.panel');
     panels.forEach(panel => {
         const panelType = panel.dataset.panel;
-        if (panelType === 'preview') return; // Don't save preview panel size
+        if (panelType === 'preview') return;
         const width = panel.offsetWidth;
         panelSizes[panelType] = width;
     });
@@ -1338,7 +1672,6 @@ function saveLayoutPreferences() {
 }
 
 function loadLayoutPreferences() {
-    // Load panel sizes
     const savedSizes = localStorage.getItem('pdfScanner_panelSizes');
     if (savedSizes) {
         try {
@@ -1348,9 +1681,8 @@ function loadLayoutPreferences() {
         }
     }
 
-    // Apply saved sizes, but never to the preview panel which should always be flexible
     Object.entries(panelSizes).forEach(([panelType, size]) => {
-        if (panelType === 'preview') return; // Skip preview panel
+        if (panelType === 'preview') return;
         const panel = document.querySelector(`[data-panel="${panelType}"]`);
         if (panel) {
             panel.style.flex = `0 0 ${size}px`;

@@ -1154,3 +1154,212 @@ body {
         height: 50vh;
     }
 }
+
+/* Advanced Filters */
+.advanced-filters {
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+    display: none;
+}
+
+.advanced-filters.visible {
+    display: block;
+}
+
+.filter-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+}
+
+.filter-select,
+.filter-date,
+.filter-input {
+    padding: 8px 12px;
+    background: var(--bg-dark);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-primary);
+    font-size: 13px;
+    min-width: 120px;
+}
+
+.filter-select:focus,
+.filter-date:focus,
+.filter-input:focus {
+    outline: none;
+    border-color: var(--primary);
+}
+
+.filter-input {
+    flex: 1;
+}
+
+.filter-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.filter-toggle {
+    margin: 8px 20px;
+}
+
+/* Keyboard shortcuts */
+.keyboard-shortcuts {
+    margin-top: 20px;
+    padding: 16px;
+    background: var(--bg-dark);
+    border-radius: 8px;
+    font-size: 12px;
+}
+
+.keyboard-shortcuts p {
+    margin-bottom: 8px;
+    color: var(--text-muted);
+}
+
+.keyboard-shortcuts kbd {
+    background: var(--bg-hover);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 2px 8px;
+    margin: 0 4px;
+    font-family: monospace;
+}
+
+/* Keyboard selection */
+.result-card.keyboard-selected {
+    border-color: var(--primary-light);
+    box-shadow: 0 0 0 2px var(--primary-light);
+}
+
+/* Bulk actions */
+.bulk-actions {
+    padding: 8px 20px;
+    background: var(--bg-dark);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.result-checkbox {
+    padding-right: 10px;
+}
+
+.result-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.result-card {
+    display: flex;
+    align-items: flex-start;
+}
+
+/* Pagination */
+.pagination {
+    padding: 12px 20px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    background: var(--bg-card);
+}
+
+#pageNumbers {
+    display: flex;
+    gap: 4px;
+}
+
+.page-info {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-left: 12px;
+}
+
+/* Toast notifications */
+.toast-container {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 2000;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.toast {
+    padding: 12px 20px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    animation: toast-in 0.3s ease;
+}
+
+.toast-success {
+    background: var(--success);
+    color: white;
+}
+
+.toast-error {
+    background: var(--danger);
+    color: white;
+}
+
+.toast-info {
+    background: var(--primary);
+    color: white;
+}
+
+.toast-fade {
+    animation: toast-out 0.3s ease forwards;
+}
+
+@keyframes toast-in {
+    from {
+        opacity: 0;
+        transform: translateX(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@keyframes toast-out {
+    from {
+        opacity: 1;
+        transform: translateX(0);
+    }
+    to {
+        opacity: 0;
+        transform: translateX(20px);
+    }
+}
+
+/* Watch status */
+#watchStatus {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+#watchStatusText {
+    font-size: 13px;
+    color: var(--text-secondary);
+}

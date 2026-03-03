@@ -10,7 +10,7 @@ ENV OLLAMA_HOST=host.docker.internal
 # Set work directory
 WORKDIR /app
 
-# Install system dependencies for PDF processing (if any needed by pymupdf/fitz)
+# Install system dependencies for PDF processing and watchdog
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
@@ -29,4 +29,4 @@ RUN mkdir -p /data/pdfs
 EXPOSE 4337
 
 # Run the web application
-CMD ["python", "webapp.py"]
+CMD ["python", "main.py"]
