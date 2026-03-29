@@ -67,6 +67,7 @@ def run_indexing(directory: str, force_reindex: bool = False):
         processed = 0
         skipped = 0
         errors = 0
+        attempted = 0
         
         for idx, (pdf_path, f_size, f_mtime) in enumerate(pdf_entries, 1):
             # Check for stop request
@@ -88,7 +89,10 @@ def run_indexing(directory: str, force_reindex: bool = False):
             if not force_reindex and cached:
                 if cached['size'] == f_size and abs(cached['mtime'] - f_mtime) < 0.01:
                     skipped += 1
+                    status_callback({'skipped': skipped})
                     continue
+            
+            attempted += 1
             
             # Process PDF
             logger.info(f"Analyzing [{idx}/{total}]: {filename}")
@@ -102,9 +106,9 @@ def run_indexing(directory: str, force_reindex: bool = False):
             else:
                 errors += 1
             
-            # Update progress
+            # Update progress - processed shows successfully stored files, not loop index
             status_callback({
-                'processed': idx,
+                'processed': processed,
                 'skipped': skipped,
                 'errors': errors
             })

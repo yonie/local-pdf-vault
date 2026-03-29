@@ -18,7 +18,7 @@ let totalCount = 0;
 let hasMore = false;
 
 // Filter state
-let currentSortBy = 'relevance';
+let currentSortBy = 'date';
 let currentSortOrder = 'desc';
 let currentFilters = {
     type: '',
@@ -126,7 +126,7 @@ function loadQueryFromUrl() {
     currentFilters.sender = params.get('sender') || '';
     currentFilters.dateFrom = params.get('from') || '';
     currentFilters.dateTo = params.get('to') || '';
-    currentSortBy = params.get('sort') || 'relevance';
+    currentSortBy = params.get('sort') || 'date';
     currentSortOrder = params.get('order') || 'desc';
     
     // Apply filter values to UI
