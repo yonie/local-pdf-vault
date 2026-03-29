@@ -107,7 +107,28 @@ def create_app(config_override: dict = None) -> Flask:
     app.validate_request = validate_request
     
     logger.info(f"Application initialized, vault path: {settings.scan_directory}")
-    
+
+    # Auto-start file watcher for automatic reindexing
+    if settings.watch_enabled:
+        from ..services import start_watcher, PDFScanner
+
+        def on_file_changed(path: str, event_type: str):
+            logger.info(f"File {event_type}: {path}")
+            if event_type in ('created', 'modified'):
+                scanner = PDFScanner(db_manager=db)
+                if scanner.test_ollama_connection():
+                    result = scanner.process_pdf(path)
+                    if result.get('error') is None:
+                        db.store_metadata(result)
+                        logger.info(f"Auto-indexed: {os.path.basename(path)}")
+                    else:
+                        logger.error(f"Auto-index failed for {path}: {result.get('error')}")
+
+        if start_watcher(settings.scan_directory, on_file_changed):
+            logger.info(f"File watcher started on {settings.scan_directory}")
+        else:
+            logger.warning("Failed to start file watcher")
+
     return app
 
 

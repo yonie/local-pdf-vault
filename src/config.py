@@ -47,7 +47,7 @@ class Settings(BaseSettings):
     cache_timeout: int = Field(default=30, alias="CACHE_TIMEOUT")
     
     # File Watching
-    watch_enabled: bool = Field(default=False, alias="WATCH_ENABLED")
+    watch_enabled: bool = Field(default=True, alias="WATCH_ENABLED")
     watch_debounce_seconds: float = Field(default=2.0, alias="WATCH_DEBOUNCE_SECONDS")
     
     @property
