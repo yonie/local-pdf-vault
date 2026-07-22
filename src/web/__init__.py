@@ -117,6 +117,13 @@ def create_app(config_override: dict = None) -> Flask:
             if event_type in ('created', 'modified'):
                 scanner = PDFScanner(db_manager=db)
                 if scanner.test_ollama_connection():
+                    file_hash = scanner.generate_file_hash(path)
+                    if file_hash:
+                        existing = db.get_metadata(file_hash)
+                        if existing and existing.get('file_path') != path:
+                            db.update_file_path(file_hash, path)
+                            logger.info(f"Auto-dedup: {os.path.basename(path)} already indexed, updated path")
+                            return
                     result = scanner.process_pdf(path)
                     if result.get('error') is None:
                         db.store_metadata(result)

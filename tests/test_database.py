@@ -193,6 +193,29 @@ class TestDatabaseManager:
         assert len(page3['results']) >= 10
         assert page3['has_more'] is False
 
+    def test_update_file_path_dedup(self, db):
+        """Test updating file path for an existing hash (dedup scenario)."""
+        metadata = {
+            'file_hash': 'h' * 64,
+            'filename': 'moved.pdf',
+            'file_path': '/original/path/moved.pdf',
+            'file_size': 5000,
+            'mtime': 1234567890.0
+        }
+        db.store_metadata(metadata)
+
+        # Simulate same file found at new path
+        db.update_file_path('h' * 64, '/new/path/moved.pdf', 5000, 1234567890.5)
+
+        result = db.get_metadata('h' * 64)
+        assert result['file_path'] == '/new/path/moved.pdf'
+        assert result['mtime'] == 1234567890.5
+
+    def test_update_file_path_nonexistent(self, db):
+        """Test updating path for nonexistent hash should not error."""
+        result = db.update_file_path('z' * 64, '/nonexistent.pdf')
+        assert result is True  # No error, just no rows affected
+
 
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

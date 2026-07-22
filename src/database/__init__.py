@@ -756,6 +756,44 @@ class DatabaseManager:
             'stop_requested': False
         })
     
+    def update_file_path(self, file_hash: str, file_path: str,
+                          file_size: int = None, mtime: float = None) -> bool:
+        """
+        Update the file path (and optionally size/mtime) for an existing document
+        without re-running vision analysis. Used for deduplication when the same
+        content is found at a new path.
+
+        Args:
+            file_hash: SHA-256 hash of the document
+            file_path: New file path
+            file_size: Optional new file size
+            mtime: Optional new modification time
+
+        Returns:
+            True if updated successfully, False otherwise
+        """
+        try:
+            fields = ['file_path = ?']
+            values = [file_path]
+            if file_size is not None:
+                fields.append('file_size = ?')
+                values.append(file_size)
+            if mtime is not None:
+                fields.append('mtime = ?')
+                values.append(mtime)
+            values.append(file_hash)
+
+            with self._transaction() as conn:
+                conn.execute(
+                    f"UPDATE pdf_metadata SET {', '.join(fields)}, "
+                    f"last_updated = CURRENT_TIMESTAMP WHERE file_hash = ?",
+                    values
+                )
+            return True
+        except Exception as e:
+            logger.error(f"Error updating file path: {e}")
+            return False
+
     def close(self):
         """Close the database connection."""
         if hasattr(self._local, 'connection') and self._local.connection:

@@ -68,6 +68,7 @@ def run_indexing(directory: str, force_reindex: bool = False):
         skipped = 0
         errors = 0
         attempted = 0
+        deduped = 0
         
         for idx, (pdf_path, f_size, f_mtime) in enumerate(pdf_entries, 1):
             # Check for stop request
@@ -92,6 +93,17 @@ def run_indexing(directory: str, force_reindex: bool = False):
                     status_callback({'skipped': skipped})
                     continue
             
+            # Dedup check: hash the file, check if content already indexed under a different path
+            file_hash = scanner.generate_file_hash(pdf_path)
+            if file_hash:
+                existing = db.get_metadata(file_hash)
+                if existing and existing.get('file_path') != pdf_path:
+                    deduped += 1
+                    db.update_file_path(file_hash, pdf_path, f_size, f_mtime)
+                    logger.info(f"Dedup: {filename} already indexed (hash match), updated path")
+                    status_callback({'skipped': skipped, 'processed': processed})
+                    continue
+            
             attempted += 1
             
             # Process PDF
@@ -113,7 +125,7 @@ def run_indexing(directory: str, force_reindex: bool = False):
                 'errors': errors
             })
         
-        logger.info(f"Indexing complete: {processed} new, {skipped} skipped, {errors} errors")
+        logger.info(f"Indexing complete: {processed} new, {skipped} skipped, {deduped} deduped, {errors} errors")
         
     except Exception as e:
         logger.error(f"Indexing error: {e}")
@@ -226,8 +238,14 @@ def start_file_watcher():
     def on_file_changed(path: str, event_type: str):
         logger.info(f"File {event_type}: {path}")
         if event_type in ('created', 'modified'):
-            # Queue for reindexing
             scanner = PDFScanner(db_manager=db)
+            file_hash = scanner.generate_file_hash(path)
+            if file_hash:
+                existing = db.get_metadata(file_hash)
+                if existing and existing.get('file_path') != path:
+                    db.update_file_path(file_hash, path)
+                    logger.info(f"Dedup: {os.path.basename(path)} already indexed, updated path")
+                    return
             result = scanner.process_pdf(path)
             if result.get('error') is None:
                 db.store_metadata(result)
