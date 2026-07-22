@@ -5,11 +5,10 @@
 
 // State
 let allResults = [];
-let currentFilter = 'all';
 let currentHash = null;
 let searchTimeout = null;
+let senderFilterTimeout = null;
 let currentSearchQuery = '';
-let selectedDocuments = new Set();
 
 // Pagination state
 let currentPage = 0;
@@ -35,6 +34,9 @@ let statusPollingInterval = null;
 
 // Keyboard navigation
 let selectedIndex = -1;
+
+// Info drawer state
+const DRAWER_OPEN_KEY = 'pdfScanner_drawerOpen';
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
@@ -64,13 +66,19 @@ function setupKeyboardShortcuts() {
             e.preventDefault();
             document.getElementById('searchInput').focus();
         }
-        
+
         // G - Open admin panel
         if (e.key === 'g' || e.key === 'G') {
             e.preventDefault();
             openAdminPanel();
         }
-        
+
+        // I - Toggle info drawer
+        if ((e.key === 'i' || e.key === 'I') && currentHash) {
+            e.preventDefault();
+            toggleInfoDrawer();
+        }
+
         // Escape - Close modal or clear search
         if (e.key === 'Escape') {
             if (document.getElementById('adminModal').classList.contains('active')) {
@@ -78,19 +86,19 @@ function setupKeyboardShortcuts() {
             } else if (document.getElementById('searchInput').value) {
                 document.getElementById('searchInput').value = '';
                 document.getElementById('searchClear').style.display = 'none';
-                loadDocuments('');
+                resetAndLoad('');
             }
         }
-        
+
         // Arrow navigation
         if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
             e.preventDefault();
             navigateResults(e.key === 'ArrowDown' ? 1 : -1);
         }
-        
+
         // Enter - Open selected document
         if (e.key === 'Enter' && selectedIndex >= 0) {
-            const results = document.querySelectorAll('.result-card');
+            const results = document.querySelectorAll('.result-row');
             if (results[selectedIndex]) {
                 results[selectedIndex].click();
             }
@@ -99,17 +107,17 @@ function setupKeyboardShortcuts() {
 }
 
 function navigateResults(direction) {
-    const results = document.querySelectorAll('.result-card');
+    const results = document.querySelectorAll('.result-row');
     if (results.length === 0) return;
-    
+
     // Remove previous selection
     results.forEach(r => r.classList.remove('keyboard-selected'));
-    
+
     // Calculate new index
     selectedIndex += direction;
     if (selectedIndex < 0) selectedIndex = results.length - 1;
     if (selectedIndex >= results.length) selectedIndex = 0;
-    
+
     // Highlight and scroll into view
     results[selectedIndex].classList.add('keyboard-selected');
     results[selectedIndex].scrollIntoView({ block: 'nearest' });
@@ -120,7 +128,7 @@ function loadQueryFromUrl() {
     const params = new URLSearchParams(window.location.search);
     const query = params.get('q') || '';
     document.getElementById('searchInput').value = query;
-    
+
     // Load filters from URL
     currentFilters.type = params.get('type') || '';
     currentFilters.sender = params.get('sender') || '';
@@ -128,7 +136,7 @@ function loadQueryFromUrl() {
     currentFilters.dateTo = params.get('to') || '';
     currentSortBy = params.get('sort') || 'date';
     currentSortOrder = params.get('order') || 'desc';
-    
+
     // Apply filter values to UI
     if (currentFilters.type) document.getElementById('filterType').value = currentFilters.type;
     if (currentFilters.sender) document.getElementById('filterSender').value = currentFilters.sender;
@@ -136,36 +144,37 @@ function loadQueryFromUrl() {
     if (currentFilters.dateTo) document.getElementById('filterDateTo').value = currentFilters.dateTo;
     document.getElementById('sortBy').value = currentSortBy;
     document.getElementById('sortOrderBtn').textContent = currentSortOrder === 'desc' ? '↓' : '↑';
-    
+    updateFilterToggleState();
+
     loadDocuments(query);
 }
 
 function updateUrlWithQuery(query) {
     const url = new URL(window.location);
-    
+
     // Set or clear parameters
     if (query && query.trim()) {
         url.searchParams.set('q', query);
     } else {
         url.searchParams.delete('q');
     }
-    
+
     // Add filters
     if (currentFilters.type) url.searchParams.set('type', currentFilters.type);
     else url.searchParams.delete('type');
-    
+
     if (currentFilters.sender) url.searchParams.set('sender', currentFilters.sender);
     else url.searchParams.delete('sender');
-    
+
     if (currentFilters.dateFrom) url.searchParams.set('from', currentFilters.dateFrom);
     else url.searchParams.delete('from');
-    
+
     if (currentFilters.dateTo) url.searchParams.set('to', currentFilters.dateTo);
     else url.searchParams.delete('to');
-    
+
     url.searchParams.set('sort', currentSortBy);
     url.searchParams.set('order', currentSortOrder);
-    
+
     window.history.replaceState({}, '', url);
 }
 
@@ -198,7 +207,7 @@ function getRecentSearches() {
 
 function saveRecentSearch(query) {
     if (!query || query.length < 2) return;
-    
+
     let searches = getRecentSearches();
     searches = searches.filter(s => s.toLowerCase() !== query.toLowerCase());
     searches.unshift(query);
@@ -218,12 +227,12 @@ function renderRecentSearches() {
     const searches = getRecentSearches();
     const container = document.getElementById('recentSearches');
     const list = document.getElementById('recentSearchesList');
-    
+
     if (searches.length === 0) {
         container.style.display = 'none';
         return;
     }
-    
+
     container.style.display = 'block';
     list.innerHTML = searches.map(search => `
         <span class="recent-search-item" onclick="useRecentSearch('${escapeHtml(search).replace(/'/g, "\\'")}')">
@@ -236,7 +245,7 @@ function renderRecentSearches() {
 function useRecentSearch(query) {
     document.getElementById('searchInput').value = query;
     document.getElementById('recentSearches').style.display = 'none';
-    loadDocuments(query);
+    resetAndLoad(query);
     saveRecentSearch(query);
 }
 
@@ -244,14 +253,13 @@ function useRecentSearch(query) {
 function setupEventListeners() {
     const searchInput = document.getElementById('searchInput');
     const searchClear = document.getElementById('searchClear');
-    
+
     searchInput.addEventListener('input', (e) => {
         searchClear.style.display = e.target.value ? 'block' : 'none';
-        
+
         clearTimeout(searchTimeout);
         searchTimeout = setTimeout(() => {
-            currentPage = 0;
-            loadDocuments(e.target.value);
+            resetAndLoad(e.target.value);
         }, 300);
     });
 
@@ -259,8 +267,7 @@ function setupEventListeners() {
         searchInput.value = '';
         searchClear.style.display = 'none';
         searchInput.focus();
-        currentPage = 0;
-        loadDocuments('');
+        resetAndLoad('');
     });
 
     searchInput.addEventListener('keydown', (e) => {
@@ -270,8 +277,7 @@ function setupEventListeners() {
         if (e.key === 'Escape') {
             searchInput.value = '';
             searchClear.style.display = 'none';
-            currentPage = 0;
-            loadDocuments('');
+            resetAndLoad('');
         }
     });
 
@@ -289,43 +295,40 @@ function setupEventListeners() {
         }
     });
 
-    document.getElementById('filters').addEventListener('click', (e) => {
-        if (e.target.classList.contains('filter-btn')) {
-            document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
-            e.target.classList.add('active');
-            currentFilter = e.target.dataset.filter;
-            currentPage = 0;
-            applyFilter();
-        }
+    // Filters auto-apply on change
+    document.getElementById('filterType').addEventListener('change', applyFilters);
+    document.getElementById('filterDateFrom').addEventListener('change', applyFilters);
+    document.getElementById('filterDateTo').addEventListener('change', applyFilters);
+    document.getElementById('filterSender').addEventListener('input', () => {
+        clearTimeout(senderFilterTimeout);
+        senderFilterTimeout = setTimeout(applyFilters, 300);
     });
-    
+
     // Sort order toggle
     document.getElementById('sortOrderBtn').addEventListener('click', () => {
         currentSortOrder = currentSortOrder === 'desc' ? 'asc' : 'desc';
         document.getElementById('sortOrderBtn').textContent = currentSortOrder === 'desc' ? '↓' : '↑';
-        currentPage = 0;
-        loadDocuments(currentSearchQuery);
+        resetAndLoad(currentSearchQuery);
     });
-    
+
     // Sort by change
     document.getElementById('sortBy').addEventListener('change', (e) => {
         currentSortBy = e.target.value;
-        currentPage = 0;
-        loadDocuments(currentSearchQuery);
+        resetAndLoad(currentSearchQuery);
     });
 }
 
 function setupModalHandlers() {
     const modal = document.getElementById('adminModal');
-    
+
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && modal.classList.contains('active')) {
             closeAdminPanel();
         }
     });
-    
-    modal.addEventListener('click', (e) => {
-        if (e.target === modal) {
+
+    document.addEventListener('click', (e) => {
+        if (modal.classList.contains('active') && e.target === modal) {
             closeAdminPanel();
         }
     });
@@ -333,15 +336,15 @@ function setupModalHandlers() {
 
 // Filter Functions
 function toggleFilters() {
-    const filters = document.getElementById('advancedFilters');
+    document.getElementById('advancedFilters').classList.toggle('visible');
+    updateFilterToggleState();
+}
+
+function updateFilterToggleState() {
     const btn = document.getElementById('filterToggleBtn');
-    if (filters.style.display === 'none' || !filters.style.display) {
-        filters.style.display = 'block';
-        btn.textContent = '▼ Filters';
-    } else {
-        filters.style.display = 'none';
-        btn.textContent = '⚙️ Filters';
-    }
+    const foldOpen = document.getElementById('advancedFilters').classList.contains('visible');
+    const hasFilters = currentFilters.sender || currentFilters.dateFrom || currentFilters.dateTo;
+    btn.classList.toggle('active', foldOpen || !!hasFilters);
 }
 
 function applyFilters() {
@@ -349,8 +352,8 @@ function applyFilters() {
     currentFilters.sender = document.getElementById('filterSender').value;
     currentFilters.dateFrom = document.getElementById('filterDateFrom').value;
     currentFilters.dateTo = document.getElementById('filterDateTo').value;
-    currentPage = 0;
-    loadDocuments(currentSearchQuery);
+    updateFilterToggleState();
+    resetAndLoad(currentSearchQuery);
 }
 
 function clearFilters() {
@@ -359,8 +362,8 @@ function clearFilters() {
     document.getElementById('filterDateFrom').value = '';
     document.getElementById('filterDateTo').value = '';
     currentFilters = { type: '', sender: '', dateFrom: '', dateTo: '' };
-    currentPage = 0;
-    loadDocuments(currentSearchQuery);
+    updateFilterToggleState();
+    resetAndLoad(currentSearchQuery);
 }
 
 async function loadDocumentTypes() {
@@ -368,56 +371,50 @@ async function loadDocumentTypes() {
         const response = await fetch('/api/document-types');
         const data = await response.json();
         const select = document.getElementById('filterType');
-        
+
         data.types.forEach(type => {
             const option = document.createElement('option');
             option.value = type;
             option.textContent = type;
             select.appendChild(option);
         });
+
+        // Re-apply type filter from URL now that options exist
+        if (currentFilters.type) select.value = currentFilters.type;
     } catch (error) {
         console.error('Error loading document types:', error);
     }
 }
 
-// Pagination
-function prevPage() {
-    if (currentPage > 0) {
-        currentPage--;
-        loadDocuments(currentSearchQuery);
-    }
+// Pagination (append mode)
+function resetAndLoad(query) {
+    currentPage = 0;
+    loadDocuments(query);
 }
 
-function nextPage() {
+function loadMoreResults() {
+    if (!hasMore) return;
+    currentPage++;
+    loadDocuments(currentSearchQuery, true);
+}
+
+function renderLoadMore() {
+    const container = document.getElementById('loadMore');
+    const btn = document.getElementById('loadMoreBtn');
+
     if (hasMore) {
-        currentPage++;
-        loadDocuments(currentSearchQuery);
-    }
-}
-
-function renderPagination() {
-    const pagination = document.getElementById('pagination');
-    const pageInfo = document.getElementById('pageInfo');
-    const prevBtn = document.getElementById('prevPage');
-    const nextBtn = document.getElementById('nextPage');
-    
-    if (totalCount > pageSize) {
-        pagination.style.display = 'flex';
-        const start = currentPage * pageSize + 1;
-        const end = Math.min((currentPage + 1) * pageSize, totalCount);
-        pageInfo.textContent = `${start}-${end} of ${totalCount}`;
-        prevBtn.disabled = currentPage === 0;
-        nextBtn.disabled = !hasMore;
+        container.style.display = 'block';
+        btn.textContent = `Load more (${allResults.length} of ${totalCount})`;
     } else {
-        pagination.style.display = 'none';
+        container.style.display = 'none';
     }
 }
 
 // Load Documents
-async function loadDocuments(query = '') {
+async function loadDocuments(query = '', append = false) {
     currentSearchQuery = query;
     updateUrlWithQuery(query);
-    
+
     try {
         // Build query params
         const params = new URLSearchParams();
@@ -430,28 +427,30 @@ async function loadDocuments(query = '') {
         if (currentFilters.sender) params.set('sender', currentFilters.sender);
         if (currentFilters.dateFrom) params.set('date_from', currentFilters.dateFrom);
         if (currentFilters.dateTo) params.set('date_to', currentFilters.dateTo);
-        
+
         const response = await fetch(`/api/search?${params.toString()}`);
         const data = await response.json();
-        
-        allResults = data.results || data;  // Handle both paginated and old format
+
+        const results = data.results || data;  // Handle both paginated and old format
+        allResults = append ? allResults.concat(results) : results;
         totalCount = data.total || allResults.length;
         hasMore = data.has_more || false;
 
-        updateFilters();
-        applyFilter();
-        
+        displayResults(allResults);
+
         if (query) {
             document.getElementById('recentSearches').style.display = 'none';
         }
-        
+
         // Restore selection
-        const savedHash = loadSelectedDocument();
-        if (savedHash && allResults.some(r => r.file_hash === savedHash)) {
-            showDocument(savedHash);
+        if (!append) {
+            const savedHash = loadSelectedDocument();
+            if (savedHash && allResults.some(r => r.file_hash === savedHash)) {
+                showDocument(savedHash);
+            }
         }
-        
-        renderPagination();
+
+        renderLoadMore();
     } catch (error) {
         console.error('Error loading documents:', error);
         showToast('Error loading documents', 'error');
@@ -464,24 +463,31 @@ async function loadDocuments(query = '') {
     }
 }
 
-function updateFilters() {
-    const types = new Set(allResults.map(r => r.document_type).filter(Boolean));
-    const filtersContainer = document.getElementById('filters');
-    
-    filtersContainer.innerHTML = '<button class="filter-btn active" data-filter="all">All</button>';
-    
-    types.forEach(type => {
-        const btn = document.createElement('button');
-        btn.className = 'filter-btn';
-        btn.dataset.filter = type;
-        btn.textContent = type.charAt(0).toUpperCase() + type.slice(1);
-        filtersContainer.appendChild(btn);
-    });
+// Map free-form document types onto a small set of color categories
+function typeCategory(type) {
+    if (!type) return 'other';
+    const t = type.toLowerCase();
+    if (/tax|belasting|aanslag/.test(t)) return 'tax';
+    if (/invoice|factuur|payment|receipt|bank|salar|income|financ|betaling|pension|pensioen/.test(t)) return 'finance';
+    if (/insurance|verzeker|polis/.test(t)) return 'insurance';
+    if (/contract|legal|deed|overeenkomst|agreement/.test(t)) return 'legal';
+    if (/report|rapport|health|questionnaire/.test(t)) return 'report';
+    if (/passport|paspoort|certificat|diploma|identity/.test(t)) return 'id';
+    if (/ticket|travel|booking|reservation|flight/.test(t)) return 'travel';
+    if (/letter|brief|notice|notification|verzoek|form/.test(t)) return 'letter';
+    return 'other';
 }
 
-function applyFilter() {
-    // Server-side filtering is already applied, just display results
-    displayResults(allResults);
+// Prefer the AI subject as title; fall back to a cleaned-up filename
+function cleanTitle(result) {
+    if (result.subject) return result.subject;
+    let name = result.filename.split(/[/\\]/).pop().replace(/\.pdf$/i, '');
+    name = name
+        .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '')
+        .replace(/_+/g, ' ')
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+    return name || result.filename;
 }
 
 function displayResults(results) {
@@ -501,99 +507,31 @@ function displayResults(results) {
     }
 
     container.innerHTML = results.map((result, index) => {
-        const filename = result.filename.split(/[/\\]/).pop();
-        const tags = (result.tags || []).slice(0, 4);
-        const matches = result.search_matches || [];
         const relevanceScore = result.relevance_score || 0;
         const showScore = currentSearchQuery && currentSearchQuery.trim() && relevanceScore > 0;
-        const matchPercent = showScore ? getMatchPercent(relevanceScore) : { show: false };
-        const isSelected = selectedDocuments.has(result.file_hash);
+        let matchPercent = showScore ? getMatchPercent(relevanceScore) : { show: false };
+        // A wall of identical low-percentage chips is noise, not signal
+        if (matchPercent.level === 'low') matchPercent = { show: false };
+        const meta = [result.sender, result.date].filter(Boolean).join(' · ') || result.document_type || '';
 
         return `
-            <div class="result-card ${result.file_hash === currentHash ? 'active' : ''}"
+            <div class="result-row ${result.file_hash === currentHash ? 'active' : ''}"
                  data-index="${index}"
+                 data-cat="${typeCategory(result.document_type)}"
+                 title="${escapeHtml(result.document_type || '')}"
                  onclick="showDocument('${result.file_hash}')">
-                <div class="result-checkbox">
-                    <input type="checkbox" 
-                           ${isSelected ? 'checked' : ''} 
-                           onclick="event.stopPropagation(); toggleSelect('${result.file_hash}')"
-                           title="Select for bulk action">
+                <div class="row-main">
+                    <div class="row-title">${escapeHtml(cleanTitle(result))}</div>
+                    <div class="row-meta">${escapeHtml(meta)}</div>
                 </div>
-                <div class="result-content">
-                    <div class="result-header">
-                        <span class="result-filename">${escapeHtml(filename)}</span>
-                        ${result.document_type ? `<span class="result-type">${escapeHtml(result.document_type)}</span>` : ''}
-                    </div>
-                    ${result.subject ? `<div class="result-subject">${escapeHtml(result.subject)}</div>` : ''}
-                    ${tags.length > 0 ? `
-                        <div class="result-tags">
-                            ${tags.map(tag => `<span class="tag">${escapeHtml(tag)}</span>`).join('')}
-                        </div>
-                    ` : ''}
-                    ${matches.length > 0 ? `
-                        <div class="result-matches">
-                            ${matches.map(match => `
-                                <span class="match-badge">
-                                    <span class="match-term">${escapeHtml(match.term)}</span>
-                                    <span class="match-fields">(${match.fields.join(', ')})</span>
-                                </span>
-                            `).join('')}
-                            ${showScore && matchPercent.show ? `
-                                <span class="match-score ${matchPercent.level}" title="${matchPercent.label}">
-                                    ${matchPercent.percent}%
-                                </span>
-                            ` : ''}
-                        </div>
-                    ` : ''}
-                    <div class="result-meta">
-                        ${result.date ? `<span class="result-meta-item">📅 ${escapeHtml(result.date)}</span>` : ''}
-                        ${result.sender ? `<span class="result-meta-item">👤 ${escapeHtml(result.sender)}</span>` : ''}
-                    </div>
-                </div>
+                ${matchPercent.show ? `
+                    <span class="match-score ${matchPercent.level}" title="${matchPercent.label}">
+                        ${matchPercent.percent}%
+                    </span>
+                ` : ''}
             </div>
         `;
     }).join('');
-}
-
-// Bulk Selection (for export only)
-function toggleSelect(hash) {
-    if (selectedDocuments.has(hash)) {
-        selectedDocuments.delete(hash);
-    } else {
-        selectedDocuments.add(hash);
-    }
-    updateBulkActions();
-    applyFilter();
-}
-
-function toggleSelectAll() {
-    const selectAll = document.getElementById('selectAll');
-    if (selectAll.checked) {
-        allResults.forEach(r => selectedDocuments.add(r.file_hash));
-    } else {
-        selectedDocuments.clear();
-    }
-    updateBulkActions();
-    applyFilter();
-}
-
-function clearSelection() {
-    selectedDocuments.clear();
-    document.getElementById('selectAll').checked = false;
-    updateBulkActions();
-    applyFilter();
-}
-
-function updateBulkActions() {
-    const bulkActions = document.getElementById('bulkActions');
-    const selectedCount = document.getElementById('selectedCount');
-    
-    if (selectedDocuments.size > 0) {
-        bulkActions.style.display = 'flex';
-        selectedCount.textContent = `${selectedDocuments.size} selected`;
-    } else {
-        bulkActions.style.display = 'none';
-    }
 }
 
 // Export (CSV only)
@@ -602,10 +540,10 @@ async function exportResults(format) {
         showToast('JSON export not available', 'error');
         return;
     }
-    
+
     try {
         showToast('Exporting...', 'info');
-        
+
         const response = await fetch(`/api/export?format=csv`);
         const blob = await response.blob();
         const url = URL.createObjectURL(blob);
@@ -614,7 +552,7 @@ async function exportResults(format) {
         a.download = `documents_${new Date().toISOString().split('T')[0]}.csv`;
         a.click();
         URL.revokeObjectURL(url);
-        
+
         showToast('Export complete', 'success');
     } catch (error) {
         console.error('Export error:', error);
@@ -629,7 +567,7 @@ function showToast(message, type = 'info') {
     toast.className = `toast toast-${type}`;
     toast.textContent = message;
     container.appendChild(toast);
-    
+
     setTimeout(() => {
         toast.classList.add('toast-fade');
         setTimeout(() => toast.remove(), 300);
@@ -652,10 +590,10 @@ async function loadStats() {
     try {
         const response = await fetch('/api/stats');
         const stats = await response.json();
-        
+
         document.getElementById('statTotal').textContent = stats.total;
         document.getElementById('statErrors').textContent = stats.errors;
-        
+
     } catch (error) {
         console.error('Error loading stats:', error);
     }
@@ -679,10 +617,10 @@ async function loadWatchStatus() {
     try {
         const response = await fetch('/api/admin/watch/status');
         const status = await response.json();
-        
+
         const statusText = document.getElementById('watchStatusText');
         const toggleBtn = document.getElementById('watchToggleBtn');
-        
+
         if (status.enabled) {
             statusText.textContent = status.running ? 'Watch mode active' : 'Watch mode enabled (not running)';
             toggleBtn.textContent = 'Stop';
@@ -700,7 +638,7 @@ async function toggleWatchMode() {
     try {
         const response = await fetch('/api/admin/watch/start', { method: 'POST' });
         const result = await response.json();
-        
+
         if (result.success) {
             showToast('Watch mode started', 'success');
         } else {
@@ -723,109 +661,73 @@ async function stopWatchMode() {
     }
 }
 
-async function loadTotalDocs(statusData = null) {
-    try {
-        const [stats, status] = statusData
-            ? [await fetch('/api/stats').then(r => r.json()), statusData]
-            : await Promise.all([
-                fetch('/api/stats').then(r => r.json()),
-                fetch('/api/admin/index/status').then(r => r.json())
-            ]);
-        
-        const totalDocsEl = document.getElementById('totalDocs');
-        if (status.is_running) {
-            totalDocsEl.textContent = `Currently indexing... (${stats.total} documents indexed so far)`;
-            totalDocsEl.style.color = 'var(--primary)';
-            totalDocsEl.style.fontWeight = '500';
-        } else {
-            totalDocsEl.textContent = `Current index has ${stats.total} total documents`;
-            totalDocsEl.style.color = '';
-            totalDocsEl.style.fontWeight = '';
-        }
-    } catch (error) {
-        console.error('Error loading total docs:', error);
-    }
-}
-
 function startStatusPolling() {
     if (statusPollingInterval) {
         clearInterval(statusPollingInterval);
     }
-    
+
     checkIndexingStatus();
     checkOllamaStatus();
-    
+
     statusPollingInterval = setInterval(() => {
         checkIndexingStatus();
         checkOllamaStatus();
     }, 5000);
 }
 
+function setIndexingUI(running) {
+    const headerBtn = document.getElementById('headerIndexBtn');
+    headerBtn.disabled = running;
+    headerBtn.classList.toggle('spinning', running);
+    headerBtn.title = running ? 'Indexing in progress...' : 'Update index';
+
+    const indexBtn = document.getElementById('indexBtn');
+    indexBtn.disabled = running;
+
+    document.getElementById('indexingNote').textContent = running ? ' · indexing…' : '';
+}
+
 async function checkIndexingStatus() {
     try {
         const response = await fetch('/api/admin/index/status');
         const status = await response.json();
-        
-        await loadTotalDocs(status);
-        
+
         if (status.is_running) {
+            setIndexingUI(true);
+
             if (document.getElementById('indexProgress').style.display !== 'block') {
                 document.getElementById('indexProgress').style.display = 'block';
                 document.getElementById('stopBtn').style.display = 'inline-block';
-                
-                const indexBtn = document.getElementById('indexBtn');
-                indexBtn.disabled = true;
-                indexBtn.innerHTML = '⏳ Processing...';
-                
-                const headerBtn = document.getElementById('headerIndexBtn');
-                if (headerBtn) {
-                    headerBtn.disabled = true;
-                    headerBtn.innerHTML = '⏳ Processing...';
-                }
             }
-            
+
             const progressBarContainer = document.querySelector('.progress-bar-container');
             if (status.total > 0) {
                 progressBarContainer.classList.remove('indeterminate');
                 document.getElementById('progressStatus').textContent = 'Updating Index...';
                 document.getElementById('progressCount').textContent =
                     `${status.processed}/${status.total} (${status.skipped} skipped, ${status.errors} errors)`;
+                document.getElementById('progressBar').style.width =
+                    (status.processed / status.total * 100) + '%';
             } else {
                 progressBarContainer.classList.add('indeterminate');
                 document.getElementById('progressStatus').textContent = 'Scanning Vault...';
                 document.getElementById('progressCount').textContent = 'Discovering PDF files...';
-            }
-            
-            const pct = status.total > 0 ? (status.processed / status.total * 100) : 0;
-            if (status.total > 0) {
-                document.getElementById('progressBar').style.width = pct + '%';
-            } else {
                 document.getElementById('progressBar').style.width = '100%';
             }
 
             document.getElementById('progressFile').textContent = status.current_file || '-';
-            
+
         } else {
             if (document.getElementById('indexProgress').style.display === 'block') {
                 document.getElementById('indexProgress').style.display = 'none';
                 document.getElementById('stopBtn').style.display = 'none';
-                
-                const indexBtn = document.getElementById('indexBtn');
-                indexBtn.disabled = false;
-                indexBtn.innerHTML = '🔄 Update Index';
-                
-                const headerBtn = document.getElementById('headerIndexBtn');
-                if (headerBtn) {
-                    headerBtn.disabled = false;
-                    headerBtn.innerHTML = '🔄 Update';
-                }
-                
                 document.getElementById('stopBtn').disabled = false;
                 document.getElementById('stopBtn').innerHTML = 'Stop';
-                
+
                 loadStats();
-                loadDocuments(currentSearchQuery);
+                resetAndLoad(currentSearchQuery);
             }
+            setIndexingUI(false);
         }
 
     } catch (error) {
@@ -837,40 +739,38 @@ async function checkOllamaStatus() {
     try {
         const response = await fetch('/api/ollama/status');
         const status = await response.json();
-        const statusEl = document.getElementById('ollamaStatus');
-        
+        const pill = document.getElementById('ollamaStatus');
+        const dot = pill.querySelector('.status-dot');
+        const text = document.getElementById('ollamaStatusText');
+
+        dot.classList.remove('ready', 'offline', 'missing');
+
         if (status.status === 'running') {
             if (status.model_available) {
-                statusEl.innerHTML = `Ollama: <span style="color: #22c55e; font-weight: 500;">● Ready</span>`;
-                statusEl.title = `Connected to ${status.url}\nModel: ${status.model} (available)`;
+                dot.classList.add('ready');
+                text.textContent = 'AI ready';
+                pill.title = `Connected to ${status.url}\nModel: ${status.model} (available)`;
             } else {
-                statusEl.innerHTML = `Ollama: <span style="color: #f59e0b; font-weight: 500;">● Model Missing</span>`;
-                statusEl.title = `Connected to ${status.url}\nRequired model not found: ${status.model}`;
+                dot.classList.add('missing');
+                text.textContent = 'Model missing';
+                pill.title = `Connected to ${status.url}\nRequired model not found: ${status.model}`;
             }
         } else if (status.status === 'offline') {
-            statusEl.innerHTML = `Ollama: <span style="color: #ef4444; font-weight: 500;">● Offline</span>`;
-            statusEl.title = `Cannot connect to ${status.url}\nRequired model: ${status.model}`;
+            dot.classList.add('offline');
+            text.textContent = 'AI offline';
+            pill.title = `Cannot connect to ${status.url}\nRequired model: ${status.model}`;
         } else {
-            statusEl.innerHTML = `Ollama: <span style="color: #f59e0b; font-weight: 500;">● Error</span>`;
-            statusEl.title = `Error: ${status.error}\nRequired model: ${status.model}`;
+            dot.classList.add('missing');
+            text.textContent = 'AI error';
+            pill.title = `Error: ${status.error}\nRequired model: ${status.model}`;
         }
     } catch (error) {
         console.error('Error checking Ollama status:', error);
     }
 }
 
-let indexingInterval = null;
-
 async function startIndexing() {
-    const btn = document.getElementById('indexBtn');
-    const headerBtn = document.getElementById('headerIndexBtn');
-    
-    btn.disabled = true;
-    btn.innerHTML = '⏳ Initializing...';
-    if (headerBtn) {
-        headerBtn.disabled = true;
-        headerBtn.innerHTML = '⏳...';
-    }
+    setIndexingUI(true);
 
     try {
         const response = await fetch('/api/admin/index', {
@@ -880,70 +780,17 @@ async function startIndexing() {
         });
 
         const result = await response.json();
-        
+
         if (result.success) {
             showToast('Indexing started', 'success');
             await checkIndexingStatus();
         } else {
             showToast(result.error || 'Error starting indexing', 'error');
-            btn.disabled = false;
-            btn.innerHTML = '🔄 Update Index';
-            if (headerBtn) {
-                headerBtn.disabled = false;
-                headerBtn.innerHTML = '🔄 Update';
-            }
+            setIndexingUI(false);
         }
     } catch (error) {
         showToast('Error starting indexing', 'error');
-        btn.disabled = false;
-        btn.innerHTML = '🔄 Update Index';
-        if (headerBtn) {
-            headerBtn.disabled = false;
-            headerBtn.innerHTML = '🔄 Update';
-        }
-    }
-}
-
-async function startReindexing() {
-    const btn = document.getElementById('indexBtn');
-    const headerBtn = document.getElementById('headerIndexBtn');
-    
-    btn.disabled = true;
-    btn.innerHTML = '⏳ Initializing...';
-    if (headerBtn) {
-        headerBtn.disabled = true;
-        headerBtn.innerHTML = '⏳...';
-    }
-
-    try {
-        const response = await fetch('/api/admin/index', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ force: true })
-        });
-
-        const result = await response.json();
-        
-        if (result.success) {
-            showToast('Reindexing started', 'success');
-            await checkIndexingStatus();
-        } else {
-            showToast(result.error || 'Error starting reindexing', 'error');
-            btn.disabled = false;
-            btn.innerHTML = '🔄 Update Index';
-            if (headerBtn) {
-                headerBtn.disabled = false;
-                headerBtn.innerHTML = '🔄 Update';
-            }
-        }
-    } catch (error) {
-        showToast('Error starting reindexing', 'error');
-        btn.disabled = false;
-        btn.innerHTML = '🔄 Update Index';
-        if (headerBtn) {
-            headerBtn.disabled = false;
-            headerBtn.innerHTML = '🔄 Update';
-        }
+        setIndexingUI(false);
     }
 }
 
@@ -966,17 +813,8 @@ async function stopIndexing() {
 
 async function clearAndRescan() {
     if (!confirm(`Re-analyze all PDFs in your vault?\n\nThis will scan all documents again with fresh AI analysis.\n\nYour PDF files will NOT be modified - only the search index will be updated.\n\nThis may take a while. Continue?`)) return;
-    
-    // Just trigger a full reindex (force=true)
-    const btn = document.getElementById('indexBtn');
-    const headerBtn = document.getElementById('headerIndexBtn');
-    
-    btn.disabled = true;
-    btn.innerHTML = '⏳ Starting...';
-    if (headerBtn) {
-        headerBtn.disabled = true;
-        headerBtn.innerHTML = '⏳...';
-    }
+
+    setIndexingUI(true);
 
     try {
         const response = await fetch('/api/admin/index', {
@@ -986,129 +824,115 @@ async function clearAndRescan() {
         });
 
         const result = await response.json();
-        
+
         if (result.success) {
             showToast('Re-indexing started', 'success');
             checkIndexingStatus();
         } else {
             showToast(result.error || 'Error starting re-index', 'error');
-            btn.disabled = false;
-            btn.innerHTML = '🔄 Update Index';
-            if (headerBtn) {
-                headerBtn.disabled = false;
-                headerBtn.innerHTML = '🔄 Update';
-            }
+            setIndexingUI(false);
         }
     } catch (error) {
         showToast('Error starting re-index', 'error');
-        btn.disabled = false;
-        btn.innerHTML = '🔄 Update Index';
-        if (headerBtn) {
-            headerBtn.disabled = false;
-            headerBtn.innerHTML = '🔄 Update';
-        }
+        setIndexingUI(false);
     }
+}
+
+// Info Drawer
+function isDrawerOpen() {
+    return localStorage.getItem(DRAWER_OPEN_KEY) === 'true';
+}
+
+function toggleInfoDrawer() {
+    const open = !document.getElementById('infoDrawer').classList.contains('open');
+    localStorage.setItem(DRAWER_OPEN_KEY, open);
+    applyDrawerState();
+}
+
+function applyDrawerState() {
+    const open = isDrawerOpen();
+    document.getElementById('infoDrawer').classList.toggle('open', open);
+    document.getElementById('infoToggleBtn').classList.toggle('active', open);
+}
+
+function renderInfoDrawer(result) {
+    const tags = result.tags || [];
+    const filename = result.filename.split(/[/\\]/).pop();
+    const cat = typeCategory(result.document_type);
+
+    const field = (label, value, cls = '') => value ? `
+        <div class="drawer-section">
+            <div class="drawer-label">${label}</div>
+            <div class="drawer-value ${cls}">${escapeHtml(value)}</div>
+        </div>
+    ` : '';
+
+    document.getElementById('infoDrawer').innerHTML = `
+        ${result.document_type ? `
+            <div class="drawer-section">
+                <span class="type-badge" data-cat="${cat}">${escapeHtml(result.document_type)}</span>
+            </div>
+        ` : ''}
+        ${field('Subject', result.subject)}
+        ${field('Summary', result.summary)}
+        ${field('Date', result.date)}
+        ${field('Sender', result.sender)}
+        ${field('Recipient', result.recipient)}
+        ${tags.length > 0 ? `
+            <div class="drawer-section">
+                <div class="drawer-label">Tags</div>
+                <div class="drawer-tags">
+                    ${tags.map(tag => `<span class="drawer-tag">${escapeHtml(tag)}</span>`).join('')}
+                </div>
+            </div>
+        ` : ''}
+        ${field('Filename', filename, 'mono')}
+        ${field('Path', result.file_path || result.filename, 'mono')}
+        <div class="drawer-actions">
+            <button class="btn btn-secondary btn-sm" onclick="copyPath('${escapeHtml(result.file_path || result.filename).replace(/'/g, "\\'").replace(/\\/g, '\\\\')}')">
+                Copy path
+            </button>
+        </div>
+    `;
 }
 
 function showDocument(hash) {
     const result = allResults.find(r => r.file_hash === hash);
     if (!result) return;
-    
+
     currentHash = hash;
     selectedIndex = allResults.findIndex(r => r.file_hash === hash);
     saveSelectedDocument(hash);
-    
+
     // Update active state in list
-    document.querySelectorAll('.result-card').forEach(card => {
-        card.classList.toggle('active', card.dataset.index == selectedIndex);
+    document.querySelectorAll('.result-row').forEach(row => {
+        row.classList.toggle('active', row.dataset.index == selectedIndex);
     });
-    
-    const filename = result.filename.split(/[/\\]/).pop();
-    const tags = result.tags || [];
-    
-    // Update details panel
-    document.getElementById('detailsPanel').innerHTML = `
-            <div class="details-header">
-                <div class="details-title">${escapeHtml(filename)}</div>
-                <div class="details-actions">
-                    <a href="/api/pdf/${hash}" target="_blank" class="btn btn-primary btn-sm">
-                        📄 Open in New Tab
-                    </a>
-                    <button class="btn btn-secondary btn-sm" onclick="copyPath('${escapeHtml(result.file_path || result.filename).replace(/'/g, "\\'")}')">
-                        📋 Copy Path
-                    </button>
-                </div>
-            </div>
-        <div class="details-content">
-            <div class="metadata-grid">
-                ${result.document_type ? `
-                    <div class="metadata-item">
-                        <div class="metadata-label">Document Type</div>
-                        <div class="metadata-value">${escapeHtml(result.document_type)}</div>
-                    </div>
-                ` : ''}
-                ${result.subject ? `
-                    <div class="metadata-item">
-                        <div class="metadata-label">Subject</div>
-                        <div class="metadata-value">${escapeHtml(result.subject)}</div>
-                    </div>
-                ` : ''}
-                ${result.date ? `
-                    <div class="metadata-item">
-                        <div class="metadata-label">Date</div>
-                        <div class="metadata-value">${escapeHtml(result.date)}</div>
-                    </div>
-                ` : ''}
-                ${result.sender ? `
-                    <div class="metadata-item">
-                        <div class="metadata-label">Sender</div>
-                        <div class="metadata-value">${escapeHtml(result.sender)}</div>
-                    </div>
-                ` : ''}
-                ${result.recipient ? `
-                    <div class="metadata-item">
-                        <div class="metadata-label">Recipient</div>
-                        <div class="metadata-value">${escapeHtml(result.recipient)}</div>
-                    </div>
-                ` : ''}
-                ${result.summary ? `
-                    <div class="metadata-item">
-                        <div class="metadata-label">Summary</div>
-                        <div class="metadata-value">${escapeHtml(result.summary)}</div>
-                    </div>
-                ` : ''}
-                ${tags.length > 0 ? `
-                    <div class="metadata-item">
-                        <div class="metadata-label">Tags</div>
-                        <div class="metadata-tags">
-                            ${tags.map(tag => `<span class="metadata-tag">${escapeHtml(tag)}</span>`).join('')}
-                        </div>
-                    </div>
-                ` : ''}
-            </div>
-            <div class="file-path">
-                📁 ${escapeHtml(result.file_path || result.filename)}
-            </div>
-        </div>
-    `;
-    
-    // Update preview panel
-    document.getElementById('previewPanel').innerHTML = `
-        <div class="preview-header">PDF Preview - Drag to pan • Ctrl+Scroll to zoom • Scroll to navigate</div>
+
+    // Stage: toolbar + info drawer
+    document.getElementById('stageEmpty').style.display = 'none';
+    document.getElementById('stageDoc').style.display = 'flex';
+    document.getElementById('stageTitle').textContent = cleanTitle(result);
+    document.getElementById('stageOpenBtn').href = `/api/pdf/${hash}`;
+    renderInfoDrawer(result);
+    applyDrawerState();
+
+    // Stage: PDF viewer
+    document.getElementById('pdfHost').innerHTML = `
         <div class="pdfjs-container">
             <div class="pdfjs-toolbar">
-                <button onclick="pdfViewer.prevPage()" id="prevBtn" disabled>← Previous page</button>
-                <button onclick="pdfViewer.nextPage()" id="nextBtn" disabled>Next page →</button>
-                <button onclick="pdfViewer.zoomOut()">🔍−</button>
+                <button onclick="pdfViewer.prevPage()" id="prevBtn" disabled title="Previous page">←</button>
+                <button onclick="pdfViewer.nextPage()" id="nextBtn" disabled title="Next page">→</button>
+                <button onclick="pdfViewer.zoomOut()" title="Zoom out">−</button>
                 <span class="zoom-level" id="zoomLevel">100%</span>
-                <button onclick="pdfViewer.zoomIn()">🔍+</button>
-                <button onclick="pdfViewer.fitToWidth()">↔ Fit Width</button>
-                <button onclick="pdfViewer.fitToHeight()">↕ Fit Height</button>
+                <button onclick="pdfViewer.zoomIn()" title="Zoom in">+</button>
+                <button onclick="pdfViewer.fitToWidth()" title="Fit width">↔</button>
+                <button onclick="pdfViewer.fitToHeight()" title="Fit height">↕</button>
                 <span class="page-info" id="pageInfo">Loading...</span>
             </div>
             <div class="pdfjs-canvas" id="pdfCanvas">
                 <div class="pdfjs-canvas-inner" id="pdfCanvasInner"></div>
-                <div class="pdfjs-scroll-hint">🖱️ Drag to pan • Ctrl+Scroll to zoom • Scroll to navigate</div>
+                <div class="pdfjs-scroll-hint">Drag to pan · Ctrl+Scroll to zoom</div>
             </div>
         </div>
     `;
@@ -1160,36 +984,36 @@ class PDFViewer {
         this.pageNum = 1;
         this.pageRendering = false;
         this.pageNumPending = null;
-        
+
         this.scale = null;
         this.defaultScale = null;
         this.minScale = 0.25;
         this.maxScale = 5.0;
         this.zoomStep = 0.15;
-        
+
         this.canvas = document.getElementById('pdfCanvas');
         this.canvasInner = document.getElementById('pdfCanvasInner');
         this.prevBtn = document.getElementById('prevBtn');
         this.nextBtn = document.getElementById('nextBtn');
         this.pageInfo = document.getElementById('pageInfo');
         this.zoomLevel = document.getElementById('zoomLevel');
-        
+
         this.currentPageWidth = 0;
         this.currentPageHeight = 0;
-        
+
         this.isDragging = false;
         this.dragStartX = 0;
         this.dragStartY = 0;
         this.scrollStartX = 0;
         this.scrollStartY = 0;
-        
+
         this.setupEventListeners();
         this.loadPDF();
     }
 
     setupEventListeners() {
         const container = this.canvas;
-        
+
         container.addEventListener('mousedown', (e) => {
             if (container.scrollWidth > container.clientWidth ||
                 container.scrollHeight > container.clientHeight) {
@@ -1202,7 +1026,7 @@ class PDFViewer {
                 e.preventDefault();
             }
         });
-        
+
         container.addEventListener('mousemove', (e) => {
             if (this.isDragging) {
                 const deltaX = e.clientX - this.dragStartX;
@@ -1211,17 +1035,17 @@ class PDFViewer {
                 container.scrollTop = this.scrollStartY - deltaY;
             }
         });
-        
+
         const stopDragging = () => {
             if (this.isDragging) {
                 this.isDragging = false;
                 container.style.cursor = '';
             }
         };
-        
+
         container.addEventListener('mouseup', stopDragging);
         container.addEventListener('mouseleave', stopDragging);
-        
+
         container.addEventListener('mouseenter', () => {
             if (!this.isDragging &&
                 (container.scrollWidth > container.clientWidth ||
@@ -1229,24 +1053,24 @@ class PDFViewer {
                 container.style.cursor = 'grab';
             }
         });
-        
+
         container.addEventListener('wheel', (e) => {
             if (e.ctrlKey) {
                 e.preventDefault();
-                
+
                 const rect = container.getBoundingClientRect();
                 const mouseX = e.clientX - rect.left;
                 const mouseY = e.clientY - rect.top;
-                
+
                 const scrollXPercent = (container.scrollLeft + mouseX) / container.scrollWidth;
                 const scrollYPercent = (container.scrollTop + mouseY) / container.scrollHeight;
-                
+
                 if (e.deltaY < 0) {
                     this.zoomIn();
                 } else {
                     this.zoomOut();
                 }
-                
+
                 this.pendingScrollPosition = {
                     percentX: scrollXPercent,
                     percentY: scrollYPercent,
@@ -1255,10 +1079,10 @@ class PDFViewer {
                 };
             }
         }, { passive: false });
-        
+
         document.addEventListener('keydown', (e) => {
             if (!this.pdfDoc) return;
-            
+
             if ((e.ctrlKey || e.metaKey) && !e.shiftKey) {
                 if (e.key === '+' || e.key === '=') {
                     e.preventDefault();
@@ -1271,7 +1095,7 @@ class PDFViewer {
                     this.resetView();
                 }
             }
-            
+
             if (e.key === 'ArrowLeft' && !e.ctrlKey && !e.metaKey) {
                 e.preventDefault();
                 this.prevPage();
@@ -1308,7 +1132,7 @@ class PDFViewer {
             this.pageInfo.textContent = 'Error loading PDF';
         }
     }
-    
+
     async calculateAndRenderFitToWidth() {
         try {
             const page = await this.pdfDoc.getPage(this.pageNum);
@@ -1394,10 +1218,10 @@ class PDFViewer {
         try {
             const page = await this.pdfDoc.getPage(num);
             const viewport = page.getViewport({ scale: this.scale });
-            
+
             this.currentPageWidth = viewport.width;
             this.currentPageHeight = viewport.height;
-            
+
             const canvas = document.createElement('canvas');
             const context = canvas.getContext('2d');
 
@@ -1414,10 +1238,10 @@ class PDFViewer {
             };
 
             await page.render(renderContext).promise;
-            
+
             this.canvasInner.appendChild(canvas);
             this.pageRendering = false;
-            
+
             if (this.pendingScrollPosition) {
                 const pos = this.pendingScrollPosition;
                 this.canvas.scrollLeft = (pos.percentX * this.canvas.scrollWidth) - pos.mouseX;
@@ -1580,7 +1404,7 @@ function setupResizers() {
 
         const panel = currentResizer.previousElementSibling;
         const deltaX = e.clientX - startX;
-        const newWidth = Math.max(200, startWidth + deltaX);
+        const newWidth = Math.max(260, startWidth + deltaX);
 
         panel.style.flex = `0 0 ${newWidth}px`;
         saveLayoutPreferences();
@@ -1597,12 +1421,9 @@ function setupResizers() {
 }
 
 function saveLayoutPreferences() {
-    const panels = document.querySelectorAll('.panel');
+    const panels = document.querySelectorAll('.panel[data-panel]');
     panels.forEach(panel => {
-        const panelType = panel.dataset.panel;
-        if (panelType === 'preview') return;
-        const width = panel.offsetWidth;
-        panelSizes[panelType] = width;
+        panelSizes[panel.dataset.panel] = panel.offsetWidth;
     });
     localStorage.setItem('pdfScanner_panelSizes', JSON.stringify(panelSizes));
 }
@@ -1618,7 +1439,6 @@ function loadLayoutPreferences() {
     }
 
     Object.entries(panelSizes).forEach(([panelType, size]) => {
-        if (panelType === 'preview') return;
         const panel = document.querySelector(`[data-panel="${panelType}"]`);
         if (panel) {
             panel.style.flex = `0 0 ${size}px`;
