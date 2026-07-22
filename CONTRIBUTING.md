@@ -123,13 +123,13 @@ Before committing, format your code:
 
 ```bash
 # Format code
-black pdfscanner.py webapp.py
+black src/
 
 # Check linting
-flake8 pdfscanner.py webapp.py
+flake8 src/
 
 # Type checking (optional but recommended)
-mypy pdfscanner.py webapp.py
+mypy src/
 ```
 
 ### JavaScript/HTML/CSS
@@ -171,29 +171,39 @@ Before submitting a PR, test these scenarios:
 
 ```
 localpdfvault/
-├── pdfscanner.py          # Core: PDF scanning and AI analysis
-│   ├── DatabaseManager    # SQLite operations
-│   └── PDFScanner         # Main scanning logic
+├── src/                        # Main application package
+│   ├── __init__.py             # Package exports
+│   ├── config.py               # Pydantic settings (env-driven)
+│   ├── database/
+│   │   └── __init__.py          # DatabaseManager - SQLite + FTS5
+│   ├── models/
+│   │   └── __init__.py          # Pydantic request/response models
+│   ├── services/
+│   │   ├── scanner.py           # PDFScanner - scanning + processing
+│   │   ├── vision.py            # VisionAnalyzer - Ollama integration
+│   │   └── watcher.py           # FileWatcher - auto-reindex
+│   └── web/
+│       ├── __init__.py          # Flask app factory
+│       └── routes/
+│           ├── api.py           # Search & document endpoints
+│           ├── admin.py         # Indexing & admin endpoints
+│           └── mcp.py           # MCP HTTP endpoint
 │
-├── webapp.py              # Web server and API
-│   ├── Flask routes       # HTTP endpoints
-│   └── Background tasks   # Indexing operations
-│
-├── static/
-│   ├── app.js            # Frontend JavaScript
-│   │   ├── Search logic
-│   │   ├── PDF viewer
-│   │   └── UI interactions
-│   └── style.css         # UI styling
-│
+├── main.py                     # Web app entry point
+├── mcp_server.py                # MCP stdio server entry point
+├── static/                     # Frontend assets
+│   ├── app.js                   # Frontend JavaScript
+│   └── style.css                # UI styling
 ├── templates/
-│   └── index.html        # Main web interface
-│
-├── requirements.txt       # Python dependencies
-├── README.md             # User documentation
-├── CONTRIBUTING.md       # This file
-├── LICENSE               # MIT License
-└── AGENTS.md            # AI development docs
+│   └── index.html               # Main web interface
+├── tests/                      # Test suite
+├── requirements.txt             # Python dependencies
+├── docker-compose.yml          # Docker configuration
+├── Dockerfile                  # Container build
+├── README.md                   # User documentation
+├── CONTRIBUTING.md             # This file
+├── LICENSE                     # MIT License
+└── AGENTS.md                   # AI development docs
 ```
 
 ## Key Areas for Contribution
